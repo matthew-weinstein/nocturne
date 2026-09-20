@@ -21,9 +21,14 @@
 #include "sd_card.h"
 #include "wav_writer.h"
 #include "audio_encoder.h"
+#include "ring_buffer.h"
+
+#define RING_CAPACITY_SAMPLES (MICROPHONE_SAMPLE_RATE_HZ * 10)  // 10 seconds
+#define CAPTURE_SECONDS 300                                     // 5 minutes
+
+static int16_t frame[OPUS_FRAME_SIZE_SAMPLES];
 
 #define SAMPLE_SHIFT 9  // Controls amplitude of records; find optimal value
-#define CAPTURE_SECONDS 10
 
 #define BLOCK_SIZE_SAMPLES 512
 #define REPORT_INTERVAL_MS 200
@@ -193,54 +198,66 @@ void app_main(void)
         }
     }
 
-
-
-
-
-    // Uncomment when finished development?
+    // Uncomment when finished development
     // do_ota();
 
-
-
-
-
-    ESP_ERROR_CHECK(i2s_microphone_init());
-
     ESP_ERROR_CHECK(sd_card_mount());
+    ESP_ERROR_CHECK(i2s_microphone_init());
     ESP_ERROR_CHECK(audio_encoder_init());
+    ESP_ERROR_CHECK(ring_buffer_init(RING_CAPACITY_SAMPLES));
 
-    FILE *file = fopen(SD_CARD_MOUNT_POINT "/test.opusraw", "wb");
+    FILE *file = fopen(SD_CARD_MOUNT_POINT "/capture.opusraw", "wb");
     if (file == NULL) {
         printf("could not open output file\n");
         return;
     }
 
-    size_t total_bytes = 0;
+    const uint32_t target_samples = MICROPHONE_SAMPLE_RATE_HZ * CAPTURE_SECONDS;
+    uint32_t captured = 0;
+    size_t max_occupancy = 0;
+    size_t overflow_count = 0;
 
-    for (int frame = 0; frame < TEST_FRAMES; frame++) {
-        for (int i = 0; i < OPUS_FRAME_SIZE_SAMPLES; i++) {
-            int sample_index = frame * OPUS_FRAME_SIZE_SAMPLES + i;
-            double phase = 2.0 * M_PI * TEST_TONE_HZ * sample_index
-                        / MICROPHONE_SAMPLE_RATE_HZ;
-            tone_frame[i] = (int16_t)(sin(phase) * 8000.0);
+    while (captured < target_samples) {
+        size_t num_samples = 0;
+
+        if (i2s_microphone_read(samples, BLOCK_SIZE_SAMPLES, &num_samples) != ESP_OK) {
+            continue;
         }
 
-        size_t num_bytes = 0;
-        ESP_ERROR_CHECK(audio_encoder_encode_frame(tone_frame, packet,
-                                                OPUS_MAX_PACKET_BYTES,
-                                                &num_bytes));
+        for (size_t i = 0; i < num_samples; i++) {
+            pcm[i] = (int16_t)(samples[i] >> SAMPLE_SHIFT);
+        }
 
-        uint16_t length = (uint16_t)num_bytes;
-        fwrite(&length, sizeof(length), 1, file);
-        fwrite(packet, 1, num_bytes, file);
+        if (ring_buffer_write(pcm, num_samples) != ESP_OK) {
+            overflow_count++;
+        }
 
-        total_bytes += num_bytes;
+        captured += num_samples;
+
+        size_t occupancy = ring_buffer_available();
+        if (occupancy > max_occupancy) {
+            max_occupancy = occupancy;
+        }
+
+        while (ring_buffer_available() >= OPUS_FRAME_SIZE_SAMPLES) {
+            ESP_ERROR_CHECK(ring_buffer_read(frame, OPUS_FRAME_SIZE_SAMPLES));
+
+            size_t num_bytes = 0;
+            ESP_ERROR_CHECK(audio_encoder_encode_frame(frame, packet,
+                                                    OPUS_MAX_PACKET_BYTES,
+                                                    &num_bytes));
+
+            uint16_t length = (uint16_t)num_bytes;
+            fwrite(&length, sizeof(length), 1, file);
+            fwrite(packet, 1, num_bytes, file);
+        }
     }
 
     fclose(file);
+    ring_buffer_deinit();
     ESP_ERROR_CHECK(audio_encoder_deinit());
     ESP_ERROR_CHECK(sd_card_unmount());
 
-    printf("encoded %d frames, %u bytes, %.1f bytes/frame\n",
-        TEST_FRAMES, (unsigned)total_bytes, (float)total_bytes / TEST_FRAMES);
+    printf("captured %" PRIu32 " samples, peak occupancy %u, overflows %u\n",
+        captured, (unsigned)max_occupancy, (unsigned)overflow_count);
 }
