@@ -1,0 +1,21 @@
+dependencies:
+  esphome/micro-opus:
+    component_hash: c4cec51b6e45b9b660bf8725a10c65f46485ff8b37ff664e4da3fd738301c71e
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.4'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 0.4.1
+  idf:
+    source:
+      type: idf
+    version: 6.1.0
+direct_dependencies:
+- esphome/micro-opus
+- idf
+manifest_hash: 5b7e8f17778ff760d98b3b105cbcc336a080ad49d628ed81758f3241b3350420
+target: esp32s3
+version: 3.0.0

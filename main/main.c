@@ -1,4 +1,5 @@
 #include <string.h>
+#include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
@@ -11,6 +12,31 @@
 #include "esp_http_client.h"
 #include "esp_ota_ops.h"
 #include "esp_app_desc.h"
+#include "esp_crt_bundle.h"
+#include <inttypes.h>
+#include <stdio.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "i2s_microphone.h"
+#include "sd_card.h"
+#include "wav_writer.h"
+#include "audio_encoder.h"
+
+#define SAMPLE_SHIFT 9  // Controls amplitude of records; find optimal value
+#define CAPTURE_SECONDS 10
+
+#define BLOCK_SIZE_SAMPLES 512
+#define REPORT_INTERVAL_MS 200
+
+static int16_t pcm[BLOCK_SIZE_SAMPLES];
+static int32_t samples[BLOCK_SIZE_SAMPLES];
+
+#define TEST_TONE_HZ      440
+#define TEST_DURATION_SEC 1
+#define TEST_FRAMES       ((MICROPHONE_SAMPLE_RATE_HZ * TEST_DURATION_SEC) / OPUS_FRAME_SIZE_SAMPLES)
+
+static int16_t tone_frame[OPUS_FRAME_SIZE_SAMPLES];
+static uint8_t packet[OPUS_MAX_PACKET_BYTES];
 
 static const char *TAG = "nocturne";
 static EventGroupHandle_t s_wifi_events;
@@ -20,12 +46,15 @@ static EventGroupHandle_t s_wifi_events;
 
 static int s_retries = 0;
 
+#define OTA_URL "https://github.com/matthew-weinstein/nocturne/releases/latest/download/nocturne.bin"
+
 static void do_ota(void)
 {
     esp_http_client_config_t http_cfg = {
         .url = OTA_URL,
         .timeout_ms = 30000,
         .keep_alive_enable = true,
+        .crt_bundle_attach = esp_crt_bundle_attach,
     };
 
     esp_https_ota_config_t ota_cfg = {
@@ -164,9 +193,54 @@ void app_main(void)
         }
     }
 
-    do_ota();
 
-    while (1) {
-        vTaskDelay(pdMS_TO_TICKS(5000));
+
+
+
+    // Uncomment when finished development?
+    // do_ota();
+
+
+
+
+
+    ESP_ERROR_CHECK(i2s_microphone_init());
+
+    ESP_ERROR_CHECK(sd_card_mount());
+    ESP_ERROR_CHECK(audio_encoder_init());
+
+    FILE *file = fopen(SD_CARD_MOUNT_POINT "/test.opusraw", "wb");
+    if (file == NULL) {
+        printf("could not open output file\n");
+        return;
     }
+
+    size_t total_bytes = 0;
+
+    for (int frame = 0; frame < TEST_FRAMES; frame++) {
+        for (int i = 0; i < OPUS_FRAME_SIZE_SAMPLES; i++) {
+            int sample_index = frame * OPUS_FRAME_SIZE_SAMPLES + i;
+            double phase = 2.0 * M_PI * TEST_TONE_HZ * sample_index
+                        / MICROPHONE_SAMPLE_RATE_HZ;
+            tone_frame[i] = (int16_t)(sin(phase) * 8000.0);
+        }
+
+        size_t num_bytes = 0;
+        ESP_ERROR_CHECK(audio_encoder_encode_frame(tone_frame, packet,
+                                                OPUS_MAX_PACKET_BYTES,
+                                                &num_bytes));
+
+        uint16_t length = (uint16_t)num_bytes;
+        fwrite(&length, sizeof(length), 1, file);
+        fwrite(packet, 1, num_bytes, file);
+
+        total_bytes += num_bytes;
+    }
+
+    fclose(file);
+    ESP_ERROR_CHECK(audio_encoder_deinit());
+    ESP_ERROR_CHECK(sd_card_unmount());
+
+    printf("encoded %d frames, %u bytes, %.1f bytes/frame\n",
+        TEST_FRAMES, (unsigned)total_bytes, (float)total_bytes / TEST_FRAMES);
 }
