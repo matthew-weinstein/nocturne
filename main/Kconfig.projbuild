@@ -9,6 +9,23 @@ menu "Nocturne"
         default 300
         range 5 3600
 
+    choice NOCTURNE_OPUS_APPLICATION
+        prompt "Opus application mode"
+        default NOCTURNE_OPUS_APPLICATION_AUDIO
+
+        config NOCTURNE_OPUS_APPLICATION_AUDIO
+            bool "Audio (preserves non-speech detail)"
+
+        config NOCTURNE_OPUS_APPLICATION_VOIP
+            bool "VOIP (speech-tuned, lower CPU)"
+
+    endchoice
+
+    config NOCTURNE_OPUS_BITRATE
+        int "Opus bitrate (bps)"
+        default 32000
+        range 8000 64000
+
     config NOCTURNE_TEST_CAPTURE_SECONDS
         int "Self-test capture length (seconds)"
         default 35
