@@ -66,7 +66,7 @@ static esp_err_t close_segment(void) {
 esp_err_t session_start(void) {
     mkdir(SESSIONS_DIR, 0755);
 
-    char base_id[MANIFEST_SESSION_ID_LEN];
+    char base_id[16];
     build_session_id(base_id, sizeof(base_id));
 
     char session_id[MANIFEST_SESSION_ID_LEN];

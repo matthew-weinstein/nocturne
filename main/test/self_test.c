@@ -16,6 +16,7 @@
 #define TAG "selftest"
 
 #define SESSIONS_DIR       SD_CARD_MOUNT_POINT "/sessions"
+#define SESSION_DIR_LEN 64
 #define TEST_MANIFEST_PATH SD_CARD_MOUNT_POINT "/test_manifest.bin"
 
 #define PATH_LEN 128
@@ -123,15 +124,21 @@ static esp_err_t find_latest_session(char *out, size_t out_len) {
     DIR *dir = opendir(SESSIONS_DIR);
     CHECK(dir != NULL, "could not open %s", SESSIONS_DIR);
 
-    char newest[64] = { 0 };
+    char newest[MANIFEST_SESSION_ID_LEN] = { 0 };
     struct dirent *entry;
 
     while ((entry = readdir(dir)) != NULL) {
         if (entry->d_name[0] == '.') {
             continue;
         }
+
+        size_t name_len = strlen(entry->d_name);
+        if (name_len >= sizeof(newest)) {
+            continue;
+        }
+
         if (strcmp(entry->d_name, newest) > 0) {
-            strncpy(newest, entry->d_name, sizeof(newest) - 1);
+            memcpy(newest, entry->d_name, name_len + 1);
         }
     }
 
@@ -203,7 +210,7 @@ static esp_err_t verify_segment(const char *path, size_t expected_bytes, OpusDec
 }
 
 esp_err_t self_test_latest_session(void) {
-    char session_dir[PATH_LEN];
+    char session_dir[SESSION_DIR_LEN];
     if (find_latest_session(session_dir, sizeof(session_dir)) != ESP_OK) {
         return ESP_FAIL;
     }
