@@ -79,3 +79,7 @@ Desktop.ini
 
 # Secrets
 main/secrets.h
+
+# Local files
+CLAUDE.md
+docs/nocturne-system-design.md
