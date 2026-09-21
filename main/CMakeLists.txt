@@ -21,4 +21,5 @@ idf_component_register(SRCS "main.c" "audio/i2s_microphone.c"
                                 esp_http_client
                                 app_update
                                 mbedtls
+                                esp_hw_support
                                 esphome__micro-opus)

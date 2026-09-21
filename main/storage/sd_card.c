@@ -1,7 +1,9 @@
 #include "sd_card.h"
 
+#include "driver/gpio.h"
 #include "driver/sdspi_host.h"
 #include "driver/spi_common.h"
+#include "esp_private/esp_gpio_reserve.h"
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
 
@@ -53,7 +55,11 @@ esp_err_t sd_card_mount(void) {
 }
 
 esp_err_t sd_card_unmount(void) {
+    esp_gpio_revoke(BIT64(SD_CS_PIN));
+
     esp_err_t status = esp_vfs_fat_sdcard_unmount(SD_CARD_MOUNT_POINT, card);
+    card = NULL;
+
     spi_bus_free(SD_SPI_HOST);
     return status;
 }
