@@ -6,7 +6,7 @@
 #include "esp_err.h"
 
 #define MANIFEST_MAX_SEGMENTS 256
-#define MANIFEST_SESSION_ID_LEN 16
+#define MANIFEST_SESSION_ID_LEN 24
 
 typedef struct {
     size_t num_bytes;

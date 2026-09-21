@@ -7,9 +7,13 @@
 
 #include "manifest.h"
 #include "sd_card.h"
+#include "sdkconfig.h"
+#include <errno.h>
+
+#define MAX_COLLISION_SUFFIX 99
 
 #define SESSIONS_DIR       SD_CARD_MOUNT_POINT "/sessions"
-#define SEGMENT_SECONDS    300
+#define SEGMENT_SECONDS CONFIG_NOCTURNE_SEGMENT_SECONDS
 #define FRAME_MS           20
 #define FRAMES_PER_SEGMENT ((SEGMENT_SECONDS * 1000) / FRAME_MS)
 
@@ -62,17 +66,29 @@ static esp_err_t close_segment(void) {
 esp_err_t session_start(void) {
     mkdir(SESSIONS_DIR, 0755);
 
-    char session_id[MANIFEST_SESSION_ID_LEN];
-    build_session_id(session_id, sizeof(session_id));
+    char base_id[MANIFEST_SESSION_ID_LEN];
+    build_session_id(base_id, sizeof(base_id));
 
-    snprintf(session_dir, sizeof(session_dir), "%s/%s", SESSIONS_DIR, session_id);
-    if (mkdir(session_dir, 0755) != 0) {
-        return ESP_FAIL;
+    char session_id[MANIFEST_SESSION_ID_LEN];
+    snprintf(session_id, sizeof(session_id), "%s", base_id);
+
+    for (int suffix = 1; ; suffix++) {
+        snprintf(session_dir, sizeof(session_dir), "%s/%s", SESSIONS_DIR, session_id);
+
+        if (mkdir(session_dir, 0755) == 0) {
+            break;
+        }
+        if (errno != EEXIST || suffix > MAX_COLLISION_SUFFIX) {
+            return ESP_FAIL;
+        }
+
+        snprintf(session_id, sizeof(session_id), "%s_%02d", base_id, suffix);
     }
 
     snprintf(manifest_path, sizeof(manifest_path), "%s/manifest.bin", session_dir);
 
-    esp_err_t status = manifest_create(&manifest, manifest_path, session_id, (int64_t)time(NULL));
+    esp_err_t status = manifest_create(&manifest, manifest_path,
+                                       session_id, (int64_t)time(NULL));
     if (status != ESP_OK) {
         return status;
     }

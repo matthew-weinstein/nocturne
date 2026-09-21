@@ -1,0 +1,18 @@
+menu "Nocturne"
+
+    config NOCTURNE_SELF_TEST
+        bool "Run self-tests after a short capture"
+        default n
+
+    config NOCTURNE_SEGMENT_SECONDS
+        int "Segment length (seconds)"
+        default 300
+        range 5 3600
+
+    config NOCTURNE_TEST_CAPTURE_SECONDS
+        int "Self-test capture length (seconds)"
+        default 35
+        depends on NOCTURNE_SELF_TEST
+        range 5 600
+
+endmenu

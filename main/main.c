@@ -23,9 +23,16 @@
 #include "audio_encoder.h"
 #include "ring_buffer.h"
 #include "session.h"
+#include "sdkconfig.h"
+#include "self_test.h"
 
 #define RING_CAPACITY_SAMPLES (MICROPHONE_SAMPLE_RATE_HZ * 10)  // 10 seconds
-#define CAPTURE_SECONDS 300                                     // 5 minutes
+
+#if CONFIG_NOCTURNE_SELF_TEST
+#define CAPTURE_SECONDS CONFIG_NOCTURNE_TEST_CAPTURE_SECONDS
+#else
+#define CAPTURE_SECONDS 300 /* 5 minutes */
+#endif
 
 static int16_t frame[OPUS_FRAME_SIZE_SAMPLES];
 
@@ -251,6 +258,11 @@ void app_main(void)
     }
 
     ESP_ERROR_CHECK(session_finish());
+    
+    #if CONFIG_NOCTURNE_SELF_TEST
+        self_test_run_all();
+    #endif
+
     ring_buffer_deinit();
     ESP_ERROR_CHECK(audio_encoder_deinit());
     ESP_ERROR_CHECK(sd_card_unmount());
