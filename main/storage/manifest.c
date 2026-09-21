@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 #define MANIFEST_MAGIC "NCT1"
 #define MANIFEST_MAGIC_LEN 4
@@ -89,6 +90,8 @@ esp_err_t manifest_create(manifest_t *manifest, const char *path, const char *se
     return (written == 1) ? ESP_OK : ESP_FAIL;
 }
 
+#include <unistd.h>
+
 esp_err_t manifest_open(manifest_t *manifest, const char *path) {
     FILE *file = fopen(path, "rb");
     if (file == NULL) {
@@ -111,12 +114,24 @@ esp_err_t manifest_open(manifest_t *manifest, const char *path) {
     manifest->session_id[MANIFEST_SESSION_ID_LEN - 1] = '\0';
     manifest->started_unix = header.started_unix;
 
+    size_t valid_length = sizeof(header);
     manifest_record_t record;
+
     while (fread(&record, sizeof(record), 1, file) == 1) {
         apply_record(manifest, &record);
+        valid_length += sizeof(record);
     }
 
+    fseek(file, 0, SEEK_END);
+    long file_length = ftell(file);
     fclose(file);
+
+    if (file_length > (long)valid_length) {
+        if (truncate(path, (off_t)valid_length) != 0) {
+            return ESP_FAIL;
+        }
+    }
+
     return ESP_OK;
 }
 
