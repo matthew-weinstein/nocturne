@@ -3,9 +3,15 @@
 #include "opus.h"
 #include "i2s_microphone.h"
 
-#define OPUS_BITRATE_BPS 24000
+#define OPUS_BITRATE_BPS CONFIG_NOCTURNE_OPUS_BITRATE
 #define OPUS_COMPLEXITY  1
 #define OPUS_CHANNELS    1
+
+#if CONFIG_NOCTURNE_OPUS_APPLICATION_AUDIO
+#define OPUS_APPLICATION_MODE OPUS_APPLICATION_AUDIO
+#else
+#define OPUS_APPLICATION_MODE OPUS_APPLICATION_VOIP
+#endif
 
 static OpusEncoder *encoder;
 
@@ -14,7 +20,7 @@ esp_err_t audio_encoder_init(void) {
 
     encoder = opus_encoder_create(MICROPHONE_SAMPLE_RATE_HZ,
                                   OPUS_CHANNELS,
-                                  OPUS_APPLICATION_VOIP,
+                                  OPUS_APPLICATION_MODE,
                                   &opus_error);
 
     if (encoder == NULL || opus_error != OPUS_OK) {
