@@ -33,11 +33,7 @@ esp_err_t audio_encoder_init(void) {
 }
 
 esp_err_t audio_encoder_encode_frame(const int16_t *pcm, uint8_t *out_bytes, size_t max_bytes, size_t *num_bytes) {
-    opus_int32 encoded = opus_encode(encoder,
-                                     pcm,
-                                     OPUS_FRAME_SIZE_SAMPLES,
-                                     out_bytes,
-                                     (opus_int32)max_bytes);
+    opus_int32 encoded = opus_encode(encoder, pcm, OPUS_FRAME_SIZE_SAMPLES, out_bytes, (opus_int32)max_bytes);
 
     if (encoded < 0) {
         return ESP_FAIL;

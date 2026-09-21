@@ -3,6 +3,8 @@ idf_component_register(SRCS "main.c" "audio/i2s_microphone.c"
                                      "audio/audio_encoder.c"
                                      "audio/ring_buffer.c"
                                      "storage/sd_card.c"
+                                     "storage/session.c"
+                                     "storage/manifest.c"
                        INCLUDE_DIRS "." "audio" "storage"
                        REQUIRES esp_driver_i2s
                                 esp_driver_sdspi

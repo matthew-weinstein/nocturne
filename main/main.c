@@ -22,6 +22,7 @@
 #include "wav_writer.h"
 #include "audio_encoder.h"
 #include "ring_buffer.h"
+#include "session.h"
 
 #define RING_CAPACITY_SAMPLES (MICROPHONE_SAMPLE_RATE_HZ * 10)  // 10 seconds
 #define CAPTURE_SECONDS 300                                     // 5 minutes
@@ -205,6 +206,7 @@ void app_main(void)
     ESP_ERROR_CHECK(i2s_microphone_init());
     ESP_ERROR_CHECK(audio_encoder_init());
     ESP_ERROR_CHECK(ring_buffer_init(RING_CAPACITY_SAMPLES));
+    ESP_ERROR_CHECK(session_start());
 
     FILE *file = fopen(SD_CARD_MOUNT_POINT "/capture.opusraw", "wb");
     if (file == NULL) {
@@ -243,17 +245,12 @@ void app_main(void)
             ESP_ERROR_CHECK(ring_buffer_read(frame, OPUS_FRAME_SIZE_SAMPLES));
 
             size_t num_bytes = 0;
-            ESP_ERROR_CHECK(audio_encoder_encode_frame(frame, packet,
-                                                    OPUS_MAX_PACKET_BYTES,
-                                                    &num_bytes));
-
-            uint16_t length = (uint16_t)num_bytes;
-            fwrite(&length, sizeof(length), 1, file);
-            fwrite(packet, 1, num_bytes, file);
+            ESP_ERROR_CHECK(audio_encoder_encode_frame(frame, packet, OPUS_MAX_PACKET_BYTES, &num_bytes));
+            ESP_ERROR_CHECK(session_write_packet(packet, num_bytes));
         }
     }
 
-    fclose(file);
+    ESP_ERROR_CHECK(session_finish());
     ring_buffer_deinit();
     ESP_ERROR_CHECK(audio_encoder_deinit());
     ESP_ERROR_CHECK(sd_card_unmount());
