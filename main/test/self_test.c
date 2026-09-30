@@ -9,6 +9,7 @@
 #include "esp_mac.h"
 #include "opus.h"
 
+#include "aes_gcm.h"
 #include "audio_encoder.h"
 #include "i2s_microphone.h"
 #include "key_manager.h"
@@ -172,6 +173,178 @@ esp_err_t self_test_key_derivation(void) {
     return ESP_OK;
 }
 
+/* ---------- chunk encryption ---------- */
+
+/* The record this seals is decrypted by tools/decrypt_chunk.py, which rebuilds
+   the same plaintext and derives the same key from KAT_PASSPHRASE. */
+#define TEST_CHUNK_SEGMENT_INDEX 42
+#define TEST_CHUNK_INDEX         7
+#define TEST_CHUNK_FRAMES        50
+#define TEST_CHUNK_FRAME_BYTES   46
+#define TEST_CHUNK_PLAIN_BYTES   (TEST_CHUNK_FRAMES * (2 + TEST_CHUNK_FRAME_BYTES))
+#define TEST_CHUNK_RECORD_BYTES  (TEST_CHUNK_PLAIN_BYTES + AES_GCM_RECORD_OVERHEAD_BYTES)
+#define TEST_CHUNK_PATH          SD_CARD_MOUNT_POINT "/test_chunk.bin"
+
+#define NONCE_OFFSET            4
+#define CIPHERTEXT_OFFSET       (NONCE_OFFSET + AES_GCM_NONCE_BYTES)
+#define CIPHERTEXT_SAMPLE_BYTES 16
+#define HEX_LINE_BYTES          32
+
+static uint8_t chunk_plain[TEST_CHUNK_PLAIN_BYTES];
+static uint8_t chunk_record[TEST_CHUNK_RECORD_BYTES];
+static uint8_t chunk_opened[TEST_CHUNK_PLAIN_BYTES];
+
+static void build_test_chunk(uint8_t *out) {
+    size_t offset = 0;
+
+    for (int frame = 0; frame < TEST_CHUNK_FRAMES; frame++) {
+        out[offset++] = (uint8_t)TEST_CHUNK_FRAME_BYTES;
+        out[offset++] = (uint8_t)(TEST_CHUNK_FRAME_BYTES >> 8);
+
+        for (int i = 0; i < TEST_CHUNK_FRAME_BYTES; i++) {
+            out[offset++] = (uint8_t)(frame * 31 + i * 7 + 11);
+        }
+    }
+}
+
+static void log_hex(const uint8_t *bytes, size_t num_bytes) {
+    char line[HEX_LINE_BYTES * 2 + 1];
+
+    for (size_t offset = 0; offset < num_bytes; offset += HEX_LINE_BYTES) {
+        size_t run = num_bytes - offset < HEX_LINE_BYTES ? num_bytes - offset : HEX_LINE_BYTES;
+
+        for (size_t i = 0; i < run; i++) {
+            snprintf(line + i * 2, 3, "%02x", bytes[offset + i]);
+        }
+
+        printf("%s\n", line);
+    }
+}
+
+static esp_err_t seal_test_chunk(size_t *out_record_bytes) {
+    esp_err_t status = aes_gcm_seal_chunk(KAT_KEY, TEST_CHUNK_SEGMENT_INDEX, TEST_CHUNK_INDEX,
+                                          chunk_plain, sizeof(chunk_plain),
+                                          chunk_record, sizeof(chunk_record), out_record_bytes);
+    CHECK(status == ESP_OK, "aes_gcm_seal_chunk returned %d", status);
+    CHECK(*out_record_bytes == TEST_CHUNK_RECORD_BYTES, "record is %u bytes, expected %u",
+          (unsigned)*out_record_bytes, (unsigned)TEST_CHUNK_RECORD_BYTES);
+    return ESP_OK;
+}
+
+static esp_err_t open_test_chunk(uint16_t segment_index, uint32_t chunk_index, size_t num_record_bytes,
+                                 esp_err_t *out_status) {
+    size_t plain_bytes = 0;
+    size_t record_bytes = 0;
+
+    *out_status = aes_gcm_open_chunk(KAT_KEY, segment_index, chunk_index,
+                                     chunk_record, num_record_bytes,
+                                     chunk_opened, sizeof(chunk_opened), &plain_bytes, &record_bytes);
+
+    if (*out_status == ESP_OK) {
+        CHECK(plain_bytes == sizeof(chunk_plain), "opened %u bytes, expected %u",
+              (unsigned)plain_bytes, (unsigned)sizeof(chunk_plain));
+        CHECK(record_bytes == TEST_CHUNK_RECORD_BYTES, "consumed %u bytes, expected %u",
+              (unsigned)record_bytes, (unsigned)TEST_CHUNK_RECORD_BYTES);
+        CHECK(memcmp(chunk_opened, chunk_plain, sizeof(chunk_plain)) == 0,
+              "the round trip is not byte-identical");
+    }
+
+    return ESP_OK;
+}
+
+static esp_err_t write_test_chunk(size_t num_bytes) {
+    FILE *file = fopen(TEST_CHUNK_PATH, "wb");
+    CHECK(file != NULL, "could not open " TEST_CHUNK_PATH);
+
+    size_t written = fwrite(chunk_record, 1, num_bytes, file);
+    fflush(file);
+    fclose(file);
+
+    CHECK(written == num_bytes, "wrote %u of %u bytes", (unsigned)written, (unsigned)num_bytes);
+    return ESP_OK;
+}
+
+esp_err_t self_test_chunk_crypto(void) {
+    build_test_chunk(chunk_plain);
+
+    ESP_LOGI(TAG, "chunk: sealing %u bytes as segment %d chunk %d",
+             (unsigned)sizeof(chunk_plain), TEST_CHUNK_SEGMENT_INDEX, TEST_CHUNK_INDEX);
+
+    size_t record_bytes = 0;
+    if (seal_test_chunk(&record_bytes) != ESP_OK) {
+        return ESP_FAIL;
+    }
+
+    uint8_t first_nonce[AES_GCM_NONCE_BYTES];
+    uint8_t first_ciphertext[CIPHERTEXT_SAMPLE_BYTES];
+    memcpy(first_nonce, chunk_record + NONCE_OFFSET, sizeof(first_nonce));
+    memcpy(first_ciphertext, chunk_record + CIPHERTEXT_OFFSET, sizeof(first_ciphertext));
+
+    ESP_LOGI(TAG, "chunk: sealing again, the nonce must be fresh");
+    if (seal_test_chunk(&record_bytes) != ESP_OK) {
+        return ESP_FAIL;
+    }
+    CHECK(memcmp(chunk_record + NONCE_OFFSET, first_nonce, sizeof(first_nonce)) != 0, "the nonce repeated");
+    CHECK(memcmp(chunk_record + CIPHERTEXT_OFFSET, first_ciphertext, sizeof(first_ciphertext)) != 0,
+          "the same plaintext sealed to the same ciphertext");
+
+    uint32_t declared = (uint32_t)chunk_record[0] | ((uint32_t)chunk_record[1] << 8) |
+                        ((uint32_t)chunk_record[2] << 16) | ((uint32_t)chunk_record[3] << 24);
+    CHECK(declared == sizeof(chunk_plain), "the length field is %u, expected %u",
+          (unsigned)declared, (unsigned)sizeof(chunk_plain));
+    CHECK(memcmp(chunk_record + CIPHERTEXT_OFFSET, chunk_plain, CIPHERTEXT_SAMPLE_BYTES) != 0,
+          "the chunk is not encrypted");
+
+    ESP_LOGI(TAG, "chunk: opening with the matching indices");
+    esp_err_t status = ESP_FAIL;
+    if (open_test_chunk(TEST_CHUNK_SEGMENT_INDEX, TEST_CHUNK_INDEX, record_bytes, &status) != ESP_OK) {
+        return ESP_FAIL;
+    }
+    CHECK(status == ESP_OK, "aes_gcm_open_chunk returned %d", status);
+
+    ESP_LOGI(TAG, "chunk: the AAD must bind the segment and chunk index");
+    if (open_test_chunk(TEST_CHUNK_SEGMENT_INDEX + 1, TEST_CHUNK_INDEX, record_bytes, &status) != ESP_OK) {
+        return ESP_FAIL;
+    }
+    CHECK(status == ESP_ERR_INVALID_CRC, "a wrong segment index returned %d", status);
+
+    if (open_test_chunk(TEST_CHUNK_SEGMENT_INDEX, TEST_CHUNK_INDEX + 1, record_bytes, &status) != ESP_OK) {
+        return ESP_FAIL;
+    }
+    CHECK(status == ESP_ERR_INVALID_CRC, "a wrong chunk index returned %d", status);
+
+    ESP_LOGI(TAG, "chunk: a flipped ciphertext bit must fail the tag");
+    chunk_record[CIPHERTEXT_OFFSET] ^= 0x01;
+    if (open_test_chunk(TEST_CHUNK_SEGMENT_INDEX, TEST_CHUNK_INDEX, record_bytes, &status) != ESP_OK) {
+        return ESP_FAIL;
+    }
+    CHECK(status == ESP_ERR_INVALID_CRC, "a tampered chunk returned %d", status);
+    chunk_record[CIPHERTEXT_OFFSET] ^= 0x01;
+
+    ESP_LOGI(TAG, "chunk: a record running past the end must be rejected");
+    if (open_test_chunk(TEST_CHUNK_SEGMENT_INDEX, TEST_CHUNK_INDEX, record_bytes - 1, &status) != ESP_OK) {
+        return ESP_FAIL;
+    }
+    CHECK(status == ESP_ERR_INVALID_SIZE, "a truncated record returned %d", status);
+
+    if (open_test_chunk(TEST_CHUNK_SEGMENT_INDEX, TEST_CHUNK_INDEX, record_bytes, &status) != ESP_OK) {
+        return ESP_FAIL;
+    }
+    CHECK(status == ESP_OK, "the restored record no longer opens (%d)", status);
+
+    if (write_test_chunk(record_bytes) != ESP_OK) {
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG, "chunk: wrote %u bytes to %s", (unsigned)record_bytes, TEST_CHUNK_PATH);
+
+    printf("---- nocturne chunk record begin ----\n");
+    log_hex(chunk_record, record_bytes);
+    printf("---- nocturne chunk record end ----\n");
+
+    ESP_LOGI(TAG, "chunk: PASS");
+    return ESP_OK;
+}
+
 /* ---------- session verification ---------- */
 
 static esp_err_t find_latest_session(char *out, size_t out_len) {
@@ -318,14 +491,16 @@ esp_err_t self_test_latest_session(void) {
 esp_err_t self_test_run_all(void) {
     esp_err_t manifest_status = self_test_manifest();
     esp_err_t key_status = self_test_key_derivation();
+    esp_err_t chunk_status = self_test_chunk_crypto();
     esp_err_t session_status = self_test_latest_session();
 
-    if (manifest_status == ESP_OK && key_status == ESP_OK && session_status == ESP_OK) {
+    if (manifest_status == ESP_OK && key_status == ESP_OK && chunk_status == ESP_OK &&
+        session_status == ESP_OK) {
         ESP_LOGI(TAG, "ALL TESTS PASSED");
         return ESP_OK;
     }
 
-    ESP_LOGE(TAG, "TESTS FAILED (manifest=%d key=%d session=%d)",
-             manifest_status, key_status, session_status);
+    ESP_LOGE(TAG, "TESTS FAILED (manifest=%d key=%d chunk=%d session=%d)",
+             manifest_status, key_status, chunk_status, session_status);
     return ESP_FAIL;
 }

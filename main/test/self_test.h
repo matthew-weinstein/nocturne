@@ -4,5 +4,6 @@
 
 esp_err_t self_test_manifest(void);
 esp_err_t self_test_key_derivation(void);
+esp_err_t self_test_chunk_crypto(void);
 esp_err_t self_test_latest_session(void);
 esp_err_t self_test_run_all(void);
