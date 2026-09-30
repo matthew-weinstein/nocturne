@@ -6,12 +6,15 @@
 #include <sys/stat.h>
 
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "opus.h"
 
 #include "audio_encoder.h"
 #include "i2s_microphone.h"
+#include "key_manager.h"
 #include "manifest.h"
 #include "sd_card.h"
+#include "secrets.h"
 
 #define TAG "selftest"
 
@@ -115,6 +118,57 @@ esp_err_t self_test_manifest(void) {
 
     remove(TEST_MANIFEST_PATH);
     ESP_LOGI(TAG, "manifest: PASS");
+    return ESP_OK;
+}
+
+/* ---------- key derivation ---------- */
+
+/* PBKDF2-HMAC-SHA256, 100000 iterations, produced by Python hashlib, the same
+   implementation the PC pipeline will use to decrypt. */
+static const char KAT_PASSPHRASE[] = "nocturne-test-passphrase";
+static const uint8_t KAT_SALT[KEY_MANAGER_SALT_BYTES] = {
+    0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 'n', 'o', 'c', 't', 'u', 'r', 'n', 'e'
+};
+static const uint8_t KAT_KEY[KEY_MANAGER_KEY_BYTES] = {
+    0x87, 0x20, 0xff, 0xc8, 0x79, 0x77, 0xb5, 0xad, 0x1a, 0xc6, 0xf5, 0x31, 0x2e, 0x4d, 0x24, 0x10,
+    0x0c, 0x2f, 0x50, 0x66, 0xb8, 0xd9, 0xa3, 0x1a, 0x45, 0x4a, 0x31, 0xd0, 0xcd, 0x33, 0x1b, 0x36
+};
+
+esp_err_t self_test_key_derivation(void) {
+    uint8_t salt[KEY_MANAGER_SALT_BYTES];
+    CHECK(key_manager_device_salt(salt, sizeof(salt)) == ESP_OK, "key_manager_device_salt failed");
+    CHECK(memcmp(salt + 6, "nocturne", 8) == 0, "salt does not end in \"nocturne\"");
+
+    uint8_t mac[6];
+    CHECK(esp_read_mac(mac, ESP_MAC_WIFI_STA) == ESP_OK, "esp_read_mac failed");
+    CHECK(memcmp(salt, mac, sizeof(mac)) == 0, "salt does not start with the device MAC");
+
+    ESP_LOGI(TAG, "key: deriving known-answer vector (100000 iterations)");
+    uint8_t key[KEY_MANAGER_KEY_BYTES];
+    CHECK(key_manager_derive(KAT_PASSPHRASE, KAT_SALT, sizeof(KAT_SALT), key, sizeof(key)) == ESP_OK,
+          "key_manager_derive failed");
+    CHECK(memcmp(key, KAT_KEY, sizeof(key)) == 0, "derived key does not match the host vector");
+
+    ESP_LOGI(TAG, "key: deriving with a different passphrase");
+    uint8_t other_key[KEY_MANAGER_KEY_BYTES];
+    CHECK(key_manager_derive("nocturne-other-passphrase", KAT_SALT, sizeof(KAT_SALT),
+                             other_key, sizeof(other_key)) == ESP_OK, "second derive failed");
+    CHECK(memcmp(key, other_key, sizeof(key)) != 0, "a different passphrase produced the same key");
+
+    CHECK(key_manager_derive("", KAT_SALT, sizeof(KAT_SALT), key, sizeof(key)) == ESP_ERR_INVALID_ARG,
+          "an empty passphrase was accepted");
+
+    ESP_LOGI(TAG, "key: deriving the device key");
+    CHECK(key_manager_init() == ESP_OK, "key_manager_init failed");
+    const uint8_t *device_key = key_manager_key();
+    CHECK(device_key != NULL, "key_manager_key returned NULL after init");
+
+    uint8_t expected[KEY_MANAGER_KEY_BYTES];
+    CHECK(key_manager_derive(NOCTURNE_PASSPHRASE, salt, sizeof(salt), expected, sizeof(expected)) == ESP_OK,
+          "device key re-derive failed");
+    CHECK(memcmp(device_key, expected, sizeof(expected)) == 0, "device key is not reproducible");
+
+    ESP_LOGI(TAG, "key: PASS");
     return ESP_OK;
 }
 
@@ -263,13 +317,15 @@ esp_err_t self_test_latest_session(void) {
 
 esp_err_t self_test_run_all(void) {
     esp_err_t manifest_status = self_test_manifest();
+    esp_err_t key_status = self_test_key_derivation();
     esp_err_t session_status = self_test_latest_session();
 
-    if (manifest_status == ESP_OK && session_status == ESP_OK) {
+    if (manifest_status == ESP_OK && key_status == ESP_OK && session_status == ESP_OK) {
         ESP_LOGI(TAG, "ALL TESTS PASSED");
         return ESP_OK;
     }
 
-    ESP_LOGE(TAG, "TESTS FAILED (manifest=%d session=%d)", manifest_status, session_status);
+    ESP_LOGE(TAG, "TESTS FAILED (manifest=%d key=%d session=%d)",
+             manifest_status, key_status, session_status);
     return ESP_FAIL;
 }
