@@ -6,6 +6,8 @@
 
 #include "esp_log.h"
 #include "esp_mac.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "opus.h"
 
 #include "aes_gcm.h"
@@ -504,7 +506,11 @@ esp_err_t self_test_current_session(void) {
 
 esp_err_t self_test_run_all(void) {
     esp_err_t manifest_status = self_test_manifest();
+    UBaseType_t priority = uxTaskPriorityGet(NULL);
+    vTaskPrioritySet(NULL, tskIDLE_PRIORITY);
     esp_err_t key_status = self_test_key_derivation();
+    vTaskPrioritySet(NULL, priority);
+
     esp_err_t chunk_status = self_test_chunk_crypto();
     esp_err_t session_status = self_test_current_session();
 
