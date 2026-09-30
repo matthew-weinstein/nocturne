@@ -52,7 +52,7 @@ class SegmentResult:
         self.plaintext = bytearray()
         self.packets = []
         self.num_chunks = 0
-        self.stop_reason = None
+        self.stop_reason: str | None = None
         self.discarded_bytes = 0
         self.errors = []
         self.warnings = []
