@@ -8,6 +8,7 @@
 #define KEY_MANAGER_SALT_BYTES 14
 
 esp_err_t key_manager_init(void);
+esp_err_t key_manager_wait_ready(uint32_t timeout_ms);
 const uint8_t *key_manager_key(void);
 
 esp_err_t key_manager_device_salt(uint8_t *out, size_t out_len);

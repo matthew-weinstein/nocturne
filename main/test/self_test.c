@@ -24,6 +24,7 @@
 #define TEST_MANIFEST_PATH SD_CARD_MOUNT_POINT "/test_manifest.bin"
 
 #define PATH_LEN 128
+#define KEY_DERIVATION_TIMEOUT_MS 30000
 
 #define CHECK(condition, ...)                       \
     do {                                            \
@@ -161,6 +162,7 @@ esp_err_t self_test_key_derivation(void) {
 
     ESP_LOGI(TAG, "key: deriving the device key");
     CHECK(key_manager_init() == ESP_OK, "key_manager_init failed");
+    CHECK(key_manager_wait_ready(KEY_DERIVATION_TIMEOUT_MS) == ESP_OK, "device key not ready in time");
     const uint8_t *device_key = key_manager_key();
     CHECK(device_key != NULL, "key_manager_key returned NULL after init");
 

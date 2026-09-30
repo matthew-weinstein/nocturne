@@ -25,6 +25,7 @@
 #include "session.h"
 #include "sdkconfig.h"
 #include "self_test.h"
+#include "key_manager.h"
 
 #define RING_CAPACITY_SAMPLES (MICROPHONE_SAMPLE_RATE_HZ * 10)  // 10 seconds
 
@@ -191,6 +192,8 @@ void app_main(void)
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+
+    ESP_ERROR_CHECK(key_manager_init());
 
     const esp_app_desc_t *app_desc = esp_app_get_description();
     ESP_LOGI(TAG, "running version: %s", app_desc->version);
