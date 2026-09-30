@@ -5,10 +5,15 @@
 #include <sys/stat.h>
 #include <time.h>
 
+#include <errno.h>
+#include <unistd.h>
+
+#include "aes_gcm.h"
+#include "audio_encoder.h"
+#include "key_manager.h"
 #include "manifest.h"
 #include "sd_card.h"
 #include "sdkconfig.h"
-#include <errno.h>
 
 #define MAX_COLLISION_SUFFIX 99
 
@@ -20,6 +25,16 @@
 #define SESSION_DIR_LEN 64
 #define PATH_LEN        128
 
+#define FRAMES_PER_CHUNK        50
+#define FRAME_LENGTH_BYTES      2
+#define MAX_CHUNK_PLAINTEXT_BYTES (FRAMES_PER_CHUNK * (FRAME_LENGTH_BYTES + OPUS_MAX_PACKET_BYTES))
+#define MAX_CHUNK_RECORD_BYTES  (MAX_CHUNK_PLAINTEXT_BYTES + AES_GCM_RECORD_OVERHEAD_BYTES)
+#define KEY_WAIT_TIMEOUT_MS     30000
+
+#define SEGMENT_MAGIC          "NCT2"
+#define SEGMENT_FORMAT_VERSION 1
+#define SEGMENT_HEADER_BYTES   8
+
 static manifest_t manifest;
 static char session_dir[SESSION_DIR_LEN];
 static char manifest_path[PATH_LEN];
@@ -28,11 +43,34 @@ static FILE *segment_file;
 static int frames_in_segment;
 static size_t bytes_in_segment;
 
+static uint8_t chunk_plaintext[MAX_CHUNK_PLAINTEXT_BYTES];
+static uint8_t chunk_record[MAX_CHUNK_RECORD_BYTES];
+static size_t chunk_plaintext_bytes;
+static int frames_in_chunk;
+static uint32_t chunk_index;
+
 static void build_session_id(char *out, size_t out_len) {
     time_t now = time(NULL);
     struct tm local;
     localtime_r(&now, &local);
     strftime(out, out_len, "%Y%m%d_%H%M", &local);
+}
+
+static esp_err_t write_segment_header(void) {
+    uint8_t header[SEGMENT_HEADER_BYTES] = {0};
+    memcpy(header, SEGMENT_MAGIC, 4);
+    header[4] = SEGMENT_FORMAT_VERSION;
+    header[5] = FRAMES_PER_CHUNK;
+
+    if (fwrite(header, 1, sizeof(header), segment_file) != sizeof(header)) {
+        return ESP_FAIL;
+    }
+    if (fflush(segment_file) != 0 || fsync(fileno(segment_file)) != 0) {
+        return ESP_FAIL;
+    }
+
+    bytes_in_segment = sizeof(header);
+    return ESP_OK;
 }
 
 static esp_err_t open_segment(void) {
@@ -48,7 +86,43 @@ static esp_err_t open_segment(void) {
     }
 
     frames_in_segment = 0;
+    frames_in_chunk = 0;
+    chunk_plaintext_bytes = 0;
+    chunk_index = 0;
     bytes_in_segment = 0;
+
+    esp_err_t status = write_segment_header();
+    if (status != ESP_OK) {
+        fclose(segment_file);
+        segment_file = NULL;
+    }
+    return status;
+}
+
+static esp_err_t flush_chunk(void) {
+    if (chunk_plaintext_bytes == 0) {
+        return ESP_OK;
+    }
+
+    size_t record_bytes = 0;
+    esp_err_t status = aes_gcm_seal_chunk(key_manager_key(), (uint16_t)manifest.num_segments, chunk_index,
+                                          chunk_plaintext, chunk_plaintext_bytes,
+                                          chunk_record, sizeof(chunk_record), &record_bytes);
+    if (status != ESP_OK) {
+        return status;
+    }
+
+    if (fwrite(chunk_record, 1, record_bytes, segment_file) != record_bytes) {
+        return ESP_FAIL;
+    }
+    if (fflush(segment_file) != 0 || fsync(fileno(segment_file)) != 0) {
+        return ESP_FAIL;
+    }
+
+    bytes_in_segment += record_bytes;
+    chunk_index++;
+    chunk_plaintext_bytes = 0;
+    frames_in_chunk = 0;
     return ESP_OK;
 }
 
@@ -57,13 +131,24 @@ static esp_err_t close_segment(void) {
         return ESP_OK;
     }
 
+    esp_err_t status = flush_chunk();
+
     fclose(segment_file);
     segment_file = NULL;
+
+    if (status != ESP_OK) {
+        return status;
+    }
 
     return manifest_record_segment(&manifest, manifest_path, bytes_in_segment);
 }
 
 esp_err_t session_start(void) {
+    esp_err_t key_status = key_manager_wait_ready(KEY_WAIT_TIMEOUT_MS);
+    if (key_status != ESP_OK) {
+        return key_status;
+    }
+
     mkdir(SESSIONS_DIR, 0755);
 
     char base_id[16];
@@ -97,6 +182,11 @@ esp_err_t session_start(void) {
 }
 
 esp_err_t session_resume(const char *existing_session_dir) {
+    esp_err_t key_status = key_manager_wait_ready(KEY_WAIT_TIMEOUT_MS);
+    if (key_status != ESP_OK) {
+        return key_status;
+    }
+
     snprintf(session_dir, sizeof(session_dir), "%s", existing_session_dir);
     snprintf(manifest_path, sizeof(manifest_path), "%s/manifest.bin", session_dir);
 
@@ -109,17 +199,23 @@ esp_err_t session_resume(const char *existing_session_dir) {
 }
 
 esp_err_t session_write_packet(const uint8_t *packet, size_t num_bytes) {
-    uint16_t length = (uint16_t)num_bytes;
-
-    if (fwrite(&length, sizeof(length), 1, segment_file) != 1) {
-        return ESP_FAIL;
-    }
-    if (fwrite(packet, 1, num_bytes, segment_file) != num_bytes) {
-        return ESP_FAIL;
+    if (num_bytes == 0 || num_bytes > OPUS_MAX_PACKET_BYTES) {
+        return ESP_ERR_INVALID_SIZE;
     }
 
-    bytes_in_segment += sizeof(length) + num_bytes;
+    chunk_plaintext[chunk_plaintext_bytes++] = (uint8_t)(num_bytes & 0xFF);
+    chunk_plaintext[chunk_plaintext_bytes++] = (uint8_t)(num_bytes >> 8);
+    memcpy(&chunk_plaintext[chunk_plaintext_bytes], packet, num_bytes);
+    chunk_plaintext_bytes += num_bytes;
+    frames_in_chunk++;
     frames_in_segment++;
+
+    if (frames_in_chunk >= FRAMES_PER_CHUNK) {
+        esp_err_t status = flush_chunk();
+        if (status != ESP_OK) {
+            return status;
+        }
+    }
 
     if (frames_in_segment >= FRAMES_PER_SEGMENT) {
         esp_err_t status = close_segment();
