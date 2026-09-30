@@ -3,6 +3,10 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
+#include "freertos/task.h"
+
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_timer.h"
@@ -10,6 +14,11 @@
 #include "secrets.h"
 
 #define TAG "key_manager"
+
+#define DERIVATION_TASK_STACK_BYTES 8192
+#define DERIVATION_TASK_CORE        0
+#define KEY_READY_BIT               BIT0
+#define KEY_FAILED_BIT              BIT1
 
 #define PBKDF2_ITERATIONS 100000
 #define MAC_BYTES         6
@@ -20,7 +29,9 @@ _Static_assert(KEY_MANAGER_SALT_BYTES == MAC_BYTES + SALT_SUFFIX_BYTES,
                "salt is the device MAC followed by the literal \"nocturne\"");
 
 static uint8_t device_key[KEY_MANAGER_KEY_BYTES];
-static bool device_key_ready;
+static StaticEventGroup_t key_events_storage;
+static EventGroupHandle_t key_events;
+static bool derivation_started;
 
 esp_err_t key_manager_device_salt(uint8_t *out, size_t out_len) {
     if (out == NULL || out_len != KEY_MANAGER_SALT_BYTES) {
@@ -70,32 +81,64 @@ esp_err_t key_manager_derive(const char *passphrase, const uint8_t *salt, size_t
     return ESP_OK;
 }
 
-esp_err_t key_manager_init(void) {
-    if (device_key_ready) {
-        return ESP_OK;
-    }
-
+static void derivation_task(void *arg) {
     uint8_t salt[KEY_MANAGER_SALT_BYTES];
     esp_err_t status = key_manager_device_salt(salt, sizeof(salt));
     if (status != ESP_OK) {
         ESP_LOGE(TAG, "could not read device MAC: %s", esp_err_to_name(status));
-        return status;
+        xEventGroupSetBits(key_events, KEY_FAILED_BIT);
+        vTaskDelete(NULL);
     }
 
     int64_t started_us = esp_timer_get_time();
     status = key_manager_derive(NOCTURNE_PASSPHRASE, salt, sizeof(salt), device_key, sizeof(device_key));
     if (status != ESP_OK) {
-        return status;
+        xEventGroupSetBits(key_events, KEY_FAILED_BIT);
+        vTaskDelete(NULL);
     }
 
     ESP_LOGI(TAG, "device key derived from %02x%02x%02x%02x%02x%02x in %lld ms",
              salt[0], salt[1], salt[2], salt[3], salt[4], salt[5],
              (esp_timer_get_time() - started_us) / 1000);
 
-    device_key_ready = true;
+    xEventGroupSetBits(key_events, KEY_READY_BIT);
+    vTaskDelete(NULL);
+}
+
+esp_err_t key_manager_init(void) {
+    if (derivation_started) {
+        return ESP_OK;
+    }
+
+    key_events = xEventGroupCreateStatic(&key_events_storage);
+
+    BaseType_t created = xTaskCreatePinnedToCore(derivation_task, "key_derive", DERIVATION_TASK_STACK_BYTES,
+                                                 NULL, tskIDLE_PRIORITY, NULL, DERIVATION_TASK_CORE);
+    if (created != pdPASS) {
+        ESP_LOGE(TAG, "could not start the derivation task");
+        return ESP_ERR_NO_MEM;
+    }
+
+    derivation_started = true;
     return ESP_OK;
 }
 
+esp_err_t key_manager_wait_ready(uint32_t timeout_ms) {
+    if (!derivation_started) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    EventBits_t bits = xEventGroupWaitBits(key_events, KEY_READY_BIT | KEY_FAILED_BIT,
+                                           pdFALSE, pdFALSE, pdMS_TO_TICKS(timeout_ms));
+    if (bits & KEY_READY_BIT) {
+        return ESP_OK;
+    }
+    return (bits & KEY_FAILED_BIT) ? ESP_FAIL : ESP_ERR_TIMEOUT;
+}
+
 const uint8_t *key_manager_key(void) {
-    return device_key_ready ? device_key : NULL;
+    if (!derivation_started) {
+        return NULL;
+    }
+    return (xEventGroupGetBits(key_events) & KEY_READY_BIT) ? device_key : NULL;
 }
