@@ -236,3 +236,7 @@ esp_err_t session_finish(void) {
 
     return manifest_record_complete(&manifest, manifest_path);
 }
+
+const char *session_current_dir(void) {
+    return session_dir;
+}

@@ -1,6 +1,5 @@
 #include "self_test.h"
 
-#include <dirent.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -15,12 +14,11 @@
 #include "key_manager.h"
 #include "manifest.h"
 #include "sd_card.h"
+#include "session.h"
 #include "secrets.h"
 
 #define TAG "selftest"
 
-#define SESSIONS_DIR       SD_CARD_MOUNT_POINT "/sessions"
-#define SESSION_DIR_LEN 64
 #define TEST_MANIFEST_PATH SD_CARD_MOUNT_POINT "/test_manifest.bin"
 
 #define PATH_LEN 128
@@ -349,35 +347,6 @@ esp_err_t self_test_chunk_crypto(void) {
 
 /* ---------- session verification ---------- */
 
-static esp_err_t find_latest_session(char *out, size_t out_len) {
-    DIR *dir = opendir(SESSIONS_DIR);
-    CHECK(dir != NULL, "could not open %s", SESSIONS_DIR);
-
-    char newest[MANIFEST_SESSION_ID_LEN] = { 0 };
-    struct dirent *entry;
-
-    while ((entry = readdir(dir)) != NULL) {
-        if (entry->d_name[0] == '.') {
-            continue;
-        }
-
-        size_t name_len = strlen(entry->d_name);
-        if (name_len >= sizeof(newest)) {
-            continue;
-        }
-
-        if (strcmp(entry->d_name, newest) > 0) {
-            memcpy(newest, entry->d_name, name_len + 1);
-        }
-    }
-
-    closedir(dir);
-    CHECK(newest[0] != '\0', "no sessions found in %s", SESSIONS_DIR);
-
-    snprintf(out, out_len, "%s/%s", SESSIONS_DIR, newest);
-    return ESP_OK;
-}
-
 #define SEGMENT_HEADER_BYTES      8
 #define SEGMENT_FRAMES_PER_CHUNK  50
 #define MAX_CHUNK_PLAINTEXT_BYTES (SEGMENT_FRAMES_PER_CHUNK * (2 + OPUS_MAX_PACKET_BYTES))
@@ -483,11 +452,9 @@ static esp_err_t verify_segment(const char *path, uint16_t segment_index, size_t
     return status;
 }
 
-esp_err_t self_test_latest_session(void) {
-    char session_dir[SESSION_DIR_LEN];
-    if (find_latest_session(session_dir, sizeof(session_dir)) != ESP_OK) {
-        return ESP_FAIL;
-    }
+esp_err_t self_test_current_session(void) {
+    const char *session_dir = session_current_dir();
+    CHECK(session_dir[0] != '\0', "no session has been started");
     ESP_LOGI(TAG, "session: verifying %s", session_dir);
 
     char manifest_path[PATH_LEN];
@@ -539,7 +506,7 @@ esp_err_t self_test_run_all(void) {
     esp_err_t manifest_status = self_test_manifest();
     esp_err_t key_status = self_test_key_derivation();
     esp_err_t chunk_status = self_test_chunk_crypto();
-    esp_err_t session_status = self_test_latest_session();
+    esp_err_t session_status = self_test_current_session();
 
     if (manifest_status == ESP_OK && key_status == ESP_OK && chunk_status == ESP_OK &&
         session_status == ESP_OK) {
