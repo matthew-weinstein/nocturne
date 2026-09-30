@@ -378,7 +378,13 @@ static esp_err_t find_latest_session(char *out, size_t out_len) {
     return ESP_OK;
 }
 
-static esp_err_t verify_segment(const char *path, size_t expected_bytes, OpusDecoder *decoder, int *out_frames) {
+#define SEGMENT_HEADER_BYTES      8
+#define SEGMENT_FRAMES_PER_CHUNK  50
+#define MAX_CHUNK_PLAINTEXT_BYTES (SEGMENT_FRAMES_PER_CHUNK * (2 + OPUS_MAX_PACKET_BYTES))
+#define MAX_CHUNK_RECORD_BYTES    (MAX_CHUNK_PLAINTEXT_BYTES + AES_GCM_RECORD_OVERHEAD_BYTES)
+
+static esp_err_t verify_segment(const char *path, uint16_t segment_index, size_t expected_bytes,
+                                OpusDecoder *decoder, int *out_frames) {
     struct stat info;
     CHECK(stat(path, &info) == 0, "stat failed for %s", path);
     CHECK((size_t)info.st_size == expected_bytes, "%s is %ld bytes, manifest says %u",
@@ -387,45 +393,84 @@ static esp_err_t verify_segment(const char *path, size_t expected_bytes, OpusDec
     FILE *file = fopen(path, "rb");
     CHECK(file != NULL, "could not open %s", path);
 
-    static uint8_t packet[OPUS_MAX_PACKET_BYTES];
+    uint8_t header[SEGMENT_HEADER_BYTES];
+    if (fread(header, 1, sizeof(header), file) != sizeof(header) || memcmp(header, "NCT2", 4) != 0 ||
+        header[4] != 1 || header[5] != SEGMENT_FRAMES_PER_CHUNK) {
+        ESP_LOGE(TAG, "%s has a bad segment header", path);
+        fclose(file);
+        return ESP_FAIL;
+    }
+
+    static uint8_t record[MAX_CHUNK_RECORD_BYTES];
+    static uint8_t plaintext[MAX_CHUNK_PLAINTEXT_BYTES];
     static int16_t pcm[OPUS_FRAME_SIZE_SAMPLES];
 
     int frames = 0;
     int nonzero_frames = 0;
+    uint32_t chunk_index = 0;
     esp_err_t status = ESP_OK;
 
-    while (true) {
-        uint16_t length = 0;
-        if (fread(&length, sizeof(length), 1, file) != 1) {
+    while (status == ESP_OK) {
+        if (fread(record, 1, 4, file) != 4) {
             break;
         }
 
-        if (length == 0 || length > OPUS_MAX_PACKET_BYTES) {
-            ESP_LOGE(TAG, "%s frame %d has implausible length %u", path, frames, (unsigned)length);
+        uint32_t payload_bytes = (uint32_t)record[0] | ((uint32_t)record[1] << 8) |
+                                 ((uint32_t)record[2] << 16) | ((uint32_t)record[3] << 24);
+        if (payload_bytes == 0 || payload_bytes > MAX_CHUNK_PLAINTEXT_BYTES) {
+            ESP_LOGE(TAG, "%s chunk %u has implausible length %u", path, (unsigned)chunk_index,
+                     (unsigned)payload_bytes);
             status = ESP_FAIL;
             break;
         }
 
-        if (fread(packet, 1, length, file) != length) {
-            ESP_LOGW(TAG, "%s frame %d truncated (expected after a crash)", path, frames);
+        size_t num_record_bytes = payload_bytes + AES_GCM_RECORD_OVERHEAD_BYTES;
+        if (fread(record + 4, 1, num_record_bytes - 4, file) != num_record_bytes - 4) {
+            ESP_LOGW(TAG, "%s chunk %u truncated (expected after a crash)", path, (unsigned)chunk_index);
             break;
         }
 
-        int decoded = opus_decode(decoder, packet, length, pcm, OPUS_FRAME_SIZE_SAMPLES, 0);
-        if (decoded != OPUS_FRAME_SIZE_SAMPLES) {
-            ESP_LOGE(TAG, "%s frame %d decoded %d samples", path, frames, decoded);
+        size_t num_plaintext_bytes = 0;
+        size_t consumed_bytes = 0;
+        esp_err_t open_status = aes_gcm_open_chunk(key_manager_key(), segment_index, chunk_index,
+                                                   record, num_record_bytes, plaintext, sizeof(plaintext),
+                                                   &num_plaintext_bytes, &consumed_bytes);
+        if (open_status != ESP_OK) {
+            ESP_LOGE(TAG, "%s chunk %u failed to open (%d)", path, (unsigned)chunk_index, open_status);
             status = ESP_FAIL;
             break;
         }
 
-        for (int i = 0; i < decoded; i++) {
-            if (pcm[i] != 0) {
-                nonzero_frames++;
+        size_t offset = 0;
+        while (offset + 2 <= num_plaintext_bytes) {
+            uint16_t length = (uint16_t)(plaintext[offset] | (plaintext[offset + 1] << 8));
+            offset += 2;
+
+            if (length == 0 || length > OPUS_MAX_PACKET_BYTES || offset + length > num_plaintext_bytes) {
+                ESP_LOGE(TAG, "%s frame %d has implausible length %u", path, frames, (unsigned)length);
+                status = ESP_FAIL;
                 break;
             }
+
+            int decoded = opus_decode(decoder, plaintext + offset, length, pcm, OPUS_FRAME_SIZE_SAMPLES, 0);
+            if (decoded != OPUS_FRAME_SIZE_SAMPLES) {
+                ESP_LOGE(TAG, "%s frame %d decoded %d samples", path, frames, decoded);
+                status = ESP_FAIL;
+                break;
+            }
+            offset += length;
+
+            for (int i = 0; i < decoded; i++) {
+                if (pcm[i] != 0) {
+                    nonzero_frames++;
+                    break;
+                }
+            }
+
+            frames++;
         }
 
-        frames++;
+        chunk_index++;
     }
 
     fclose(file);
@@ -469,7 +514,7 @@ esp_err_t self_test_latest_session(void) {
         snprintf(path, sizeof(path), "%s/%s", session_dir, filename);
 
         int frames = 0;
-        if (verify_segment(path, manifest.segments[i].num_bytes, decoder, &frames) != ESP_OK) {
+        if (verify_segment(path, (uint16_t)i, manifest.segments[i].num_bytes, decoder, &frames) != ESP_OK) {
             result = ESP_FAIL;
             break;
         }

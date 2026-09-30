@@ -24,7 +24,7 @@ typedef struct __attribute__((packed)) {
 } manifest_record_t;
 
 void manifest_segment_filename(int index, char *out, size_t out_len) {
-    snprintf(out, out_len, "seg_%04d.opusraw", index);
+    snprintf(out, out_len, "seg_%04d.opus.enc", index);
 }
 
 static esp_err_t append_record(const char *path, const manifest_record_t *record) {
