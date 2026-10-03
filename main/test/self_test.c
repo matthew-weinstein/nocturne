@@ -17,6 +17,7 @@
 #include "manifest.h"
 #include "sd_card.h"
 #include "session.h"
+#include "sha1_stream.h"
 #include "secrets.h"
 
 #define TAG "selftest"
@@ -347,6 +348,70 @@ esp_err_t self_test_chunk_crypto(void) {
     return ESP_OK;
 }
 
+/* ---------- streaming SHA1 ---------- */
+
+/* Digests produced by Python hashlib. The pattern spans several read buffers
+   and ends partway through one. */
+#define TEST_SHA1_PATH  SD_CARD_MOUNT_POINT "/test_sha1.bin"
+#define TEST_SHA1_BYTES 10000
+
+static const char TEST_SHA1_HEX[] = "504bab9f255da75e2c3c08dfbc11061a05996bbf";
+static const char EMPTY_SHA1_HEX[] = "da39a3ee5e6b4b0d3255bfef95601890afd80709";
+
+static esp_err_t write_sha1_pattern(size_t num_bytes) {
+    FILE *file = fopen(TEST_SHA1_PATH, "wb");
+    CHECK(file != NULL, "could not open " TEST_SHA1_PATH);
+
+    size_t written = 0;
+    for (size_t i = 0; i < num_bytes; i++) {
+        if (fputc((uint8_t)(i * 7 + 3), file) == EOF) {
+            break;
+        }
+        written++;
+    }
+    fclose(file);
+
+    CHECK(written == num_bytes, "wrote %u of %u bytes", (unsigned)written, (unsigned)num_bytes);
+    return ESP_OK;
+}
+
+static esp_err_t verify_sha1(size_t num_bytes, const char *expected_hex) {
+    if (write_sha1_pattern(num_bytes) != ESP_OK) {
+        return ESP_FAIL;
+    }
+
+    char hex[SHA1_STREAM_HEX_LEN];
+    size_t hashed_bytes = 0;
+    esp_err_t status = sha1_stream_file(TEST_SHA1_PATH, hex, sizeof(hex), &hashed_bytes);
+    CHECK(status == ESP_OK, "sha1_stream_file returned %d", status);
+    CHECK(hashed_bytes == num_bytes, "hashed %u bytes, expected %u", (unsigned)hashed_bytes, (unsigned)num_bytes);
+    CHECK(strcmp(hex, expected_hex) == 0, "digest %s, expected %s", hex, expected_hex);
+    return ESP_OK;
+}
+
+esp_err_t self_test_sha1_stream(void) {
+    ESP_LOGI(TAG, "sha1: hashing a %d-byte known file", TEST_SHA1_BYTES);
+    if (verify_sha1(TEST_SHA1_BYTES, TEST_SHA1_HEX) != ESP_OK) {
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "sha1: hashing an empty file");
+    if (verify_sha1(0, EMPTY_SHA1_HEX) != ESP_OK) {
+        return ESP_FAIL;
+    }
+    remove(TEST_SHA1_PATH);
+
+    char hex[SHA1_STREAM_HEX_LEN];
+    size_t hashed_bytes = 0;
+    CHECK(sha1_stream_file(TEST_SHA1_PATH, hex, sizeof(hex), &hashed_bytes) == ESP_ERR_NOT_FOUND,
+          "a missing file was hashed");
+    CHECK(sha1_stream_file(TEST_SHA1_PATH, hex, sizeof(hex) - 1, &hashed_bytes) == ESP_ERR_INVALID_ARG,
+          "a short digest buffer was accepted");
+
+    ESP_LOGI(TAG, "sha1: PASS");
+    return ESP_OK;
+}
+
 /* ---------- session verification ---------- */
 
 #define SEGMENT_HEADER_BYTES      8
@@ -512,15 +577,16 @@ esp_err_t self_test_run_all(void) {
     vTaskPrioritySet(NULL, priority);
 
     esp_err_t chunk_status = self_test_chunk_crypto();
+    esp_err_t sha1_status = self_test_sha1_stream();
     esp_err_t session_status = self_test_current_session();
 
     if (manifest_status == ESP_OK && key_status == ESP_OK && chunk_status == ESP_OK &&
-        session_status == ESP_OK) {
+        sha1_status == ESP_OK && session_status == ESP_OK) {
         ESP_LOGI(TAG, "ALL TESTS PASSED");
         return ESP_OK;
     }
 
-    ESP_LOGE(TAG, "TESTS FAILED (manifest=%d key=%d chunk=%d session=%d)",
-             manifest_status, key_status, chunk_status, session_status);
+    ESP_LOGE(TAG, "TESTS FAILED (manifest=%d key=%d chunk=%d sha1=%d session=%d)",
+             manifest_status, key_status, chunk_status, sha1_status, session_status);
     return ESP_FAIL;
 }
