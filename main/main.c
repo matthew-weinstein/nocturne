@@ -27,6 +27,7 @@
 #include "self_test.h"
 #include "key_manager.h"
 #include "led.h"
+#include "button.h"
 
 #define RING_CAPACITY_SAMPLES (MICROPHONE_SAMPLE_RATE_HZ * 10)  // 10 seconds
 
@@ -185,6 +186,15 @@ static void wifi_init_sta(void)
     }
 }
 
+static void on_button(button_event_t event) {
+    static const led_color_t colors[] = {
+        [BUTTON_EVENT_SHORT]     = LED_COLOR_GREEN,
+        [BUTTON_EVENT_LONG]      = LED_COLOR_BLUE,
+        [BUTTON_EVENT_VERY_LONG] = LED_COLOR_RED,
+    };
+    led_flash(colors[event], LED_FLASH_MS);
+}
+
 void app_main(void)
 {
     esp_err_t ret = nvs_flash_init();
@@ -196,6 +206,7 @@ void app_main(void)
 
     ESP_ERROR_CHECK(key_manager_init());
     ESP_ERROR_CHECK(led_init());
+    ESP_ERROR_CHECK(button_init(on_button));
 
     const esp_app_desc_t *app_desc = esp_app_get_description();
     ESP_LOGI(TAG, "running version: %s", app_desc->version);
