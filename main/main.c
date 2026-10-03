@@ -28,6 +28,7 @@
 #include "key_manager.h"
 #include "led.h"
 #include "button.h"
+#include "supervisor.h"
 
 #define RING_CAPACITY_SAMPLES (MICROPHONE_SAMPLE_RATE_HZ * 10)  // 10 seconds
 
@@ -192,7 +193,13 @@ static void on_button(button_event_t event) {
         [BUTTON_EVENT_LONG]      = LED_COLOR_BLUE,
         [BUTTON_EVENT_VERY_LONG] = LED_COLOR_RED,
     };
+    static const supervisor_event_t events[] = {
+        [BUTTON_EVENT_SHORT]     = SUPERVISOR_EVENT_SHORT_PRESS,
+        [BUTTON_EVENT_LONG]      = SUPERVISOR_EVENT_LONG_PRESS,
+        [BUTTON_EVENT_VERY_LONG] = SUPERVISOR_EVENT_VERY_LONG_PRESS,
+    };
     led_flash(colors[event], LED_FLASH_MS);
+    supervisor_post(events[event]);
 }
 
 void app_main(void)
@@ -206,6 +213,7 @@ void app_main(void)
 
     ESP_ERROR_CHECK(key_manager_init());
     ESP_ERROR_CHECK(led_init());
+    ESP_ERROR_CHECK(supervisor_init());
     ESP_ERROR_CHECK(button_init(on_button));
 
     const esp_app_desc_t *app_desc = esp_app_get_description();
@@ -225,7 +233,12 @@ void app_main(void)
     // Uncomment when finished development
     // do_ota();
 
-    ESP_ERROR_CHECK(sd_card_mount());
+    if (sd_card_mount() != ESP_OK) {
+        supervisor_post(SUPERVISOR_EVENT_FAULT);
+        return;
+    }
+    supervisor_post(SUPERVISOR_EVENT_BOOT_DONE);
+
     ESP_ERROR_CHECK(i2s_microphone_init());
     ESP_ERROR_CHECK(audio_encoder_init());
     ESP_ERROR_CHECK(ring_buffer_init(RING_CAPACITY_SAMPLES));

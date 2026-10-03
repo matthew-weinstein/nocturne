@@ -11,12 +11,14 @@ idf_component_register(SRCS "main.c" "audio/i2s_microphone.c"
                                      "test/self_test.c"
                                      "hmi/led.c"
                                      "hmi/button.c"
+                                     "system/supervisor.c"
                        INCLUDE_DIRS "."
                                     "audio"
                                     "storage"
                                     "crypto"
                                     "test"
                                     "hmi"
+                                    "system"
                        REQUIRES esp_driver_i2s
                                 esp_driver_gpio
                                 esp_driver_ledc
