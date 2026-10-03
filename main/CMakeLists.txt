@@ -1,29 +1,12 @@
-idf_component_register(SRCS "main.c" "audio/i2s_microphone.c"
-                                     "audio/wav_writer.c"
-                                     "audio/audio_encoder.c"
-                                     "audio/ring_buffer.c"
-                                     "storage/sd_card.c"
-                                     "storage/session.c"
-                                     "storage/manifest.c"
-                                     "crypto/aes_gcm.c"
-                                     "crypto/key_manager.c"
-                                     "crypto/sha1_stream.c"
-                                     "test/self_test.c"
-                                     "hmi/led.c"
-                                     "hmi/button.c"
-                                     "system/supervisor.c"
+idf_component_register(SRCS "main.c"
+                            "test/self_test.c"
                        INCLUDE_DIRS "."
-                                    "audio"
-                                    "storage"
-                                    "crypto"
                                     "test"
-                                    "hmi"
-                                    "system"
-                       REQUIRES esp_driver_i2s
-                                esp_driver_gpio
-                                esp_driver_ledc
-                                esp_driver_sdspi
-                                fatfs
+                       REQUIRES audio
+                                crypto
+                                storage
+                                hmi
+                                system
                                 esp_wifi
                                 esp_netif
                                 esp_event
@@ -32,6 +15,5 @@ idf_component_register(SRCS "main.c" "audio/i2s_microphone.c"
                                 esp_http_client
                                 app_update
                                 mbedtls
-                                esp_timer
                                 esp_hw_support
                                 esphome__micro-opus)

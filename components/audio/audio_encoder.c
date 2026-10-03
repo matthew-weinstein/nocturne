@@ -1,7 +1,8 @@
 #include "audio_encoder.h"
 
+#include "audio_format.h"
 #include "opus.h"
-#include "i2s_microphone.h"
+#include "sdkconfig.h"
 
 #define OPUS_BITRATE_BPS CONFIG_NOCTURNE_OPUS_BITRATE
 #define OPUS_COMPLEXITY  1
@@ -18,7 +19,7 @@ static OpusEncoder *encoder;
 esp_err_t audio_encoder_init(void) {
     int opus_error = OPUS_OK;
 
-    encoder = opus_encoder_create(MICROPHONE_SAMPLE_RATE_HZ,
+    encoder = opus_encoder_create(AUDIO_FORMAT_SAMPLE_RATE_HZ,
                                   OPUS_CHANNELS,
                                   OPUS_APPLICATION_MODE,
                                   &opus_error);
@@ -39,7 +40,7 @@ esp_err_t audio_encoder_init(void) {
 }
 
 esp_err_t audio_encoder_encode_frame(const int16_t *pcm, uint8_t *out_bytes, size_t max_bytes, size_t *num_bytes) {
-    opus_int32 encoded = opus_encode(encoder, pcm, OPUS_FRAME_SIZE_SAMPLES, out_bytes, (opus_int32)max_bytes);
+    opus_int32 encoded = opus_encode(encoder, pcm, AUDIO_FORMAT_FRAME_SAMPLES, out_bytes, (opus_int32)max_bytes);
 
     if (encoded < 0) {
         return ESP_FAIL;
