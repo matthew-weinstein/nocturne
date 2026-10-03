@@ -18,6 +18,7 @@
 #include "sd_card.h"
 #include "session.h"
 #include "sha1_stream.h"
+#include "supervisor.h"
 #include "secrets.h"
 
 #define TAG "selftest"
@@ -569,6 +570,52 @@ esp_err_t self_test_current_session(void) {
     return result;
 }
 
+/* ---------- supervisor transitions and LED ---------- */
+
+#define SUPERVISOR_STEP_MS 2000
+
+typedef struct {
+    supervisor_event_t event;
+    supervisor_state_t expected;
+} supervisor_step_t;
+
+static const supervisor_step_t supervisor_walk[] = {
+    {SUPERVISOR_EVENT_RESUME_FOUND,    SUPERVISOR_STATE_RESUMING},
+    {SUPERVISOR_EVENT_SHORT_PRESS,     SUPERVISOR_STATE_RESUMING},
+    {SUPERVISOR_EVENT_RESUMED,         SUPERVISOR_STATE_RECORDING},
+    {SUPERVISOR_EVENT_SHORT_PRESS,     SUPERVISOR_STATE_RECORDING},
+    {SUPERVISOR_EVENT_VERY_LONG_PRESS, SUPERVISOR_STATE_RECORDING},
+    {SUPERVISOR_EVENT_LONG_PRESS,      SUPERVISOR_STATE_FINALIZING},
+    {SUPERVISOR_EVENT_SHORT_PRESS,     SUPERVISOR_STATE_FINALIZING},
+    {SUPERVISOR_EVENT_FINALIZE_OK,     SUPERVISOR_STATE_IDLE},
+    {SUPERVISOR_EVENT_LONG_PRESS,      SUPERVISOR_STATE_IDLE},
+    {SUPERVISOR_EVENT_VERY_LONG_PRESS, SUPERVISOR_STATE_IDLE},
+    {SUPERVISOR_EVENT_SHORT_PRESS,     SUPERVISOR_STATE_RECORDING},
+    {SUPERVISOR_EVENT_LONG_PRESS,      SUPERVISOR_STATE_FINALIZING},
+    {SUPERVISOR_EVENT_FINALIZE_FAILED, SUPERVISOR_STATE_IDLE},
+};
+
+static esp_err_t supervisor_result = ESP_ERR_NOT_FINISHED;
+
+esp_err_t self_test_supervisor(void) {
+    supervisor_result = ESP_FAIL;
+
+    CHECK(supervisor_state() == SUPERVISOR_STATE_BOOT, "supervisor: not in BOOT at start");
+
+    size_t num_steps = sizeof(supervisor_walk) / sizeof(supervisor_walk[0]);
+    for (size_t i = 0; i < num_steps; i++) {
+        CHECK(supervisor_post(supervisor_walk[i].event) == ESP_OK, "supervisor: step %u post failed",
+              (unsigned)i);
+        vTaskDelay(pdMS_TO_TICKS(SUPERVISOR_STEP_MS));
+        CHECK(supervisor_state() == supervisor_walk[i].expected, "supervisor: step %u reached state %d, expected %d",
+              (unsigned)i, supervisor_state(), supervisor_walk[i].expected);
+    }
+
+    ESP_LOGI(TAG, "supervisor: PASS");
+    supervisor_result = ESP_OK;
+    return ESP_OK;
+}
+
 esp_err_t self_test_run_all(void) {
     esp_err_t manifest_status = self_test_manifest();
     UBaseType_t priority = uxTaskPriorityGet(NULL);
@@ -581,12 +628,12 @@ esp_err_t self_test_run_all(void) {
     esp_err_t session_status = self_test_current_session();
 
     if (manifest_status == ESP_OK && key_status == ESP_OK && chunk_status == ESP_OK &&
-        sha1_status == ESP_OK && session_status == ESP_OK) {
+        sha1_status == ESP_OK && session_status == ESP_OK && supervisor_result == ESP_OK) {
         ESP_LOGI(TAG, "ALL TESTS PASSED");
         return ESP_OK;
     }
 
-    ESP_LOGE(TAG, "TESTS FAILED (manifest=%d key=%d chunk=%d sha1=%d session=%d)",
-             manifest_status, key_status, chunk_status, sha1_status, session_status);
+    ESP_LOGE(TAG, "TESTS FAILED (manifest=%d key=%d chunk=%d sha1=%d session=%d supervisor=%d)",
+             manifest_status, key_status, chunk_status, sha1_status, session_status, supervisor_result);
     return ESP_FAIL;
 }

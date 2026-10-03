@@ -4,6 +4,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
+#include "led.h"
 
 #define QUEUE_LENGTH 8
 
@@ -87,6 +88,32 @@ static void handle_in_place(supervisor_state_t current, supervisor_event_t event
     }
 }
 
+static esp_err_t show_state(supervisor_state_t next, supervisor_event_t event) {
+    switch (next) {
+    case SUPERVISOR_STATE_IDLE:
+        if (event == SUPERVISOR_EVENT_FINALIZE_OK) {
+            return led_flash(LED_COLOR_WHITE, LED_RESULT_MS);
+        }
+        if (event == SUPERVISOR_EVENT_FINALIZE_FAILED) {
+            return led_flash(LED_COLOR_RED, LED_RESULT_MS);
+        }
+        return led_off();
+    case SUPERVISOR_STATE_RECORDING:
+        if (event == SUPERVISOR_EVENT_RESUMED) {
+            return led_flash(LED_COLOR_CYAN, LED_FLASH_MS);
+        }
+        return led_flash(LED_COLOR_GREEN, LED_FLASH_MS);
+    case SUPERVISOR_STATE_FINALIZING:
+        return led_solid(LED_COLOR_BLUE);
+    case SUPERVISOR_STATE_FAULT:
+        return led_pulse(LED_COLOR_FAULT, LED_FAULT_ON_MS, LED_FAULT_OFF_MS);
+    case SUPERVISOR_STATE_BOOT:
+    case SUPERVISOR_STATE_RESUMING:
+        break;
+    }
+    return ESP_OK;
+}
+
 static void supervisor_task(void *arg) {
     (void)arg;
 
@@ -105,6 +132,11 @@ static void supervisor_task(void *arg) {
 
         ESP_LOGI(TAG, "%s -> %s (%s)", state_names[current], state_names[next], event_names[event]);
         state = next;
+
+        esp_err_t err = show_state(next, event);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "led update for %s failed: %s", state_names[next], esp_err_to_name(err));
+        }
     }
 }
 

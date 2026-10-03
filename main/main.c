@@ -188,17 +188,11 @@ static void wifi_init_sta(void)
 }
 
 static void on_button(button_event_t event) {
-    static const led_color_t colors[] = {
-        [BUTTON_EVENT_SHORT]     = LED_COLOR_GREEN,
-        [BUTTON_EVENT_LONG]      = LED_COLOR_BLUE,
-        [BUTTON_EVENT_VERY_LONG] = LED_COLOR_RED,
-    };
     static const supervisor_event_t events[] = {
         [BUTTON_EVENT_SHORT]     = SUPERVISOR_EVENT_SHORT_PRESS,
         [BUTTON_EVENT_LONG]      = SUPERVISOR_EVENT_LONG_PRESS,
         [BUTTON_EVENT_VERY_LONG] = SUPERVISOR_EVENT_VERY_LONG_PRESS,
     };
-    led_flash(colors[event], LED_FLASH_MS);
     supervisor_post(events[event]);
 }
 
@@ -237,6 +231,10 @@ void app_main(void)
         supervisor_post(SUPERVISOR_EVENT_FAULT);
         return;
     }
+
+    #if CONFIG_NOCTURNE_SELF_TEST
+        self_test_supervisor();
+    #endif
     supervisor_post(SUPERVISOR_EVENT_BOOT_DONE);
 
     ESP_ERROR_CHECK(i2s_microphone_init());
