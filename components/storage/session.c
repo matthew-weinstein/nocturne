@@ -9,31 +9,22 @@
 #include <unistd.h>
 
 #include "aes_gcm.h"
-#include "audio_encoder.h"
 #include "key_manager.h"
 #include "manifest.h"
 #include "sd_card.h"
+#include "segment_format.h"
 #include "sdkconfig.h"
 
 #define MAX_COLLISION_SUFFIX 99
 
 #define SESSIONS_DIR       SD_CARD_MOUNT_POINT "/sessions"
 #define SEGMENT_SECONDS CONFIG_NOCTURNE_SEGMENT_SECONDS
-#define FRAME_MS           20
-#define FRAMES_PER_SEGMENT ((SEGMENT_SECONDS * 1000) / FRAME_MS)
+#define FRAMES_PER_SEGMENT ((SEGMENT_SECONDS * 1000) / AUDIO_FORMAT_FRAME_MS)
 
 #define SESSION_DIR_LEN 64
 #define PATH_LEN        128
 
-#define FRAMES_PER_CHUNK        50
-#define FRAME_LENGTH_BYTES      2
-#define MAX_CHUNK_PLAINTEXT_BYTES (FRAMES_PER_CHUNK * (FRAME_LENGTH_BYTES + OPUS_MAX_PACKET_BYTES))
-#define MAX_CHUNK_RECORD_BYTES  (MAX_CHUNK_PLAINTEXT_BYTES + AES_GCM_RECORD_OVERHEAD_BYTES)
-#define KEY_WAIT_TIMEOUT_MS     30000
-
-#define SEGMENT_MAGIC          "NCT2"
-#define SEGMENT_FORMAT_VERSION 1
-#define SEGMENT_HEADER_BYTES   8
+#define KEY_WAIT_TIMEOUT_MS 30000
 
 static manifest_t manifest;
 static char session_dir[SESSION_DIR_LEN];
@@ -43,8 +34,8 @@ static FILE *segment_file;
 static int frames_in_segment;
 static size_t bytes_in_segment;
 
-static uint8_t chunk_plaintext[MAX_CHUNK_PLAINTEXT_BYTES];
-static uint8_t chunk_record[MAX_CHUNK_RECORD_BYTES];
+static uint8_t chunk_plaintext[SEGMENT_FORMAT_MAX_CHUNK_PLAINTEXT_BYTES];
+static uint8_t chunk_record[SEGMENT_FORMAT_MAX_CHUNK_RECORD_BYTES];
 static size_t chunk_plaintext_bytes;
 static int frames_in_chunk;
 static uint32_t chunk_index;
@@ -57,10 +48,10 @@ static void build_session_id(char *out, size_t out_len) {
 }
 
 static esp_err_t write_segment_header(void) {
-    uint8_t header[SEGMENT_HEADER_BYTES] = {0};
-    memcpy(header, SEGMENT_MAGIC, 4);
+    uint8_t header[SEGMENT_FORMAT_HEADER_BYTES] = {0};
+    memcpy(header, SEGMENT_FORMAT_MAGIC, 4);
     header[4] = SEGMENT_FORMAT_VERSION;
-    header[5] = FRAMES_PER_CHUNK;
+    header[5] = SEGMENT_FORMAT_FRAMES_PER_CHUNK;
 
     if (fwrite(header, 1, sizeof(header), segment_file) != sizeof(header)) {
         return ESP_FAIL;
@@ -199,7 +190,7 @@ esp_err_t session_resume(const char *existing_session_dir) {
 }
 
 esp_err_t session_write_packet(const uint8_t *packet, size_t num_bytes) {
-    if (num_bytes == 0 || num_bytes > OPUS_MAX_PACKET_BYTES) {
+    if (num_bytes == 0 || num_bytes > AUDIO_FORMAT_MAX_PACKET_BYTES) {
         return ESP_ERR_INVALID_SIZE;
     }
 
@@ -210,7 +201,7 @@ esp_err_t session_write_packet(const uint8_t *packet, size_t num_bytes) {
     frames_in_chunk++;
     frames_in_segment++;
 
-    if (frames_in_chunk >= FRAMES_PER_CHUNK) {
+    if (frames_in_chunk >= SEGMENT_FORMAT_FRAMES_PER_CHUNK) {
         esp_err_t status = flush_chunk();
         if (status != ESP_OK) {
             return status;

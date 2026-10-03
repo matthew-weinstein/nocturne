@@ -133,7 +133,7 @@ esp_err_t key_manager_wait_ready(uint32_t timeout_ms) {
 
     EventBits_t bits = xEventGroupWaitBits(key_events, KEY_READY_BIT | KEY_FAILED_BIT,
                                            pdFALSE, pdFALSE, pdMS_TO_TICKS(timeout_ms));
-    if (bits & KEY_READY_BIT) {
+    if (bits & KEY_READY_BIT) { 
         return ESP_OK;
     }
     return (bits & KEY_FAILED_BIT) ? ESP_FAIL : ESP_ERR_TIMEOUT;

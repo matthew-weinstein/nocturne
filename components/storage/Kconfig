@@ -1,0 +1,8 @@
+menu "Nocturne storage"
+
+    config NOCTURNE_SEGMENT_SECONDS
+        int "Segment length (seconds)"
+        default 300
+        range 5 3600
+
+endmenu

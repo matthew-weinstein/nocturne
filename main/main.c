@@ -1,5 +1,4 @@
 #include <string.h>
-#include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
@@ -15,11 +14,9 @@
 #include "esp_crt_bundle.h"
 #include <inttypes.h>
 #include <stdio.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+#include "audio_format.h"
 #include "i2s_microphone.h"
 #include "sd_card.h"
-#include "wav_writer.h"
 #include "audio_encoder.h"
 #include "ring_buffer.h"
 #include "session.h"
@@ -30,7 +27,7 @@
 #include "button.h"
 #include "supervisor.h"
 
-#define RING_CAPACITY_SAMPLES (MICROPHONE_SAMPLE_RATE_HZ * 10)  // 10 seconds
+#define RING_CAPACITY_SAMPLES (AUDIO_FORMAT_SAMPLE_RATE_HZ * 10)  // 10 seconds
 
 #if CONFIG_NOCTURNE_SELF_TEST
 #define CAPTURE_SECONDS CONFIG_NOCTURNE_TEST_CAPTURE_SECONDS
@@ -38,22 +35,16 @@
 #define CAPTURE_SECONDS 300 /* 5 minutes */
 #endif
 
-static int16_t frame[OPUS_FRAME_SIZE_SAMPLES];
+static int16_t frame[AUDIO_FORMAT_FRAME_SAMPLES];
 
 #define SAMPLE_SHIFT 9  // Controls amplitude of records; find optimal value
 
 #define BLOCK_SIZE_SAMPLES 512
-#define REPORT_INTERVAL_MS 200
 
 static int16_t pcm[BLOCK_SIZE_SAMPLES];
 static int32_t samples[BLOCK_SIZE_SAMPLES];
 
-#define TEST_TONE_HZ      440
-#define TEST_DURATION_SEC 1
-#define TEST_FRAMES       ((MICROPHONE_SAMPLE_RATE_HZ * TEST_DURATION_SEC) / OPUS_FRAME_SIZE_SAMPLES)
-
-static int16_t tone_frame[OPUS_FRAME_SIZE_SAMPLES];
-static uint8_t packet[OPUS_MAX_PACKET_BYTES];
+static uint8_t packet[AUDIO_FORMAT_MAX_PACKET_BYTES];
 
 static const char *TAG = "nocturne";
 static EventGroupHandle_t s_wifi_events;
@@ -242,13 +233,7 @@ void app_main(void)
     ESP_ERROR_CHECK(ring_buffer_init(RING_CAPACITY_SAMPLES));
     ESP_ERROR_CHECK(session_start());
 
-    FILE *file = fopen(SD_CARD_MOUNT_POINT "/capture.opusraw", "wb");
-    if (file == NULL) {
-        printf("could not open output file\n");
-        return;
-    }
-
-    const uint32_t target_samples = MICROPHONE_SAMPLE_RATE_HZ * CAPTURE_SECONDS;
+    const uint32_t target_samples = AUDIO_FORMAT_SAMPLE_RATE_HZ * CAPTURE_SECONDS;
     uint32_t captured = 0;
     size_t max_occupancy = 0;
     size_t overflow_count = 0;
@@ -275,11 +260,11 @@ void app_main(void)
             max_occupancy = occupancy;
         }
 
-        while (ring_buffer_available() >= OPUS_FRAME_SIZE_SAMPLES) {
-            ESP_ERROR_CHECK(ring_buffer_read(frame, OPUS_FRAME_SIZE_SAMPLES));
+        while (ring_buffer_available() >= AUDIO_FORMAT_FRAME_SAMPLES) {
+            ESP_ERROR_CHECK(ring_buffer_read(frame, AUDIO_FORMAT_FRAME_SAMPLES));
 
             size_t num_bytes = 0;
-            ESP_ERROR_CHECK(audio_encoder_encode_frame(frame, packet, OPUS_MAX_PACKET_BYTES, &num_bytes));
+            ESP_ERROR_CHECK(audio_encoder_encode_frame(frame, packet, AUDIO_FORMAT_MAX_PACKET_BYTES, &num_bytes));
             ESP_ERROR_CHECK(session_write_packet(packet, num_bytes));
         }
     }

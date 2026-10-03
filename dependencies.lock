@@ -16,6 +16,6 @@ dependencies:
 direct_dependencies:
 - esphome/micro-opus
 - idf
-manifest_hash: 5b7e8f17778ff760d98b3b105cbcc336a080ad49d628ed81758f3241b3350420
+manifest_hash: a40cccd5eca70be54ae234175f2af42d2167f265585a9dce264fb6c902a4e893
 target: esp32s3
 version: 3.0.0

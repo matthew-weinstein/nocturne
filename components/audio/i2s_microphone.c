@@ -1,4 +1,5 @@
 #include "i2s_microphone.h"
+#include "audio_format.h"
 #include "driver/i2s_std.h"
 #include "freertos/FreeRTOS.h"
 
@@ -19,7 +20,7 @@ esp_err_t i2s_microphone_init(void) {
     }
 
     i2s_std_config_t std_cfg = {
-        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(MICROPHONE_SAMPLE_RATE_HZ),
+        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(AUDIO_FORMAT_SAMPLE_RATE_HZ),
         .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_MONO),
         .gpio_cfg = {
             .mclk = I2S_GPIO_UNUSED,

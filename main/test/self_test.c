@@ -11,11 +11,11 @@
 #include "opus.h"
 
 #include "aes_gcm.h"
-#include "audio_encoder.h"
-#include "i2s_microphone.h"
+#include "audio_format.h"
 #include "key_manager.h"
 #include "manifest.h"
 #include "sd_card.h"
+#include "segment_format.h"
 #include "session.h"
 #include "sha1_stream.h"
 #include "supervisor.h"
@@ -415,11 +415,6 @@ esp_err_t self_test_sha1_stream(void) {
 
 /* ---------- session verification ---------- */
 
-#define SEGMENT_HEADER_BYTES      8
-#define SEGMENT_FRAMES_PER_CHUNK  50
-#define MAX_CHUNK_PLAINTEXT_BYTES (SEGMENT_FRAMES_PER_CHUNK * (2 + OPUS_MAX_PACKET_BYTES))
-#define MAX_CHUNK_RECORD_BYTES    (MAX_CHUNK_PLAINTEXT_BYTES + AES_GCM_RECORD_OVERHEAD_BYTES)
-
 static esp_err_t verify_segment(const char *path, uint16_t segment_index, size_t expected_bytes,
                                 OpusDecoder *decoder, int *out_frames) {
     struct stat info;
@@ -430,17 +425,17 @@ static esp_err_t verify_segment(const char *path, uint16_t segment_index, size_t
     FILE *file = fopen(path, "rb");
     CHECK(file != NULL, "could not open %s", path);
 
-    uint8_t header[SEGMENT_HEADER_BYTES];
-    if (fread(header, 1, sizeof(header), file) != sizeof(header) || memcmp(header, "NCT2", 4) != 0 ||
-        header[4] != 1 || header[5] != SEGMENT_FRAMES_PER_CHUNK) {
+    uint8_t header[SEGMENT_FORMAT_HEADER_BYTES];
+    if (fread(header, 1, sizeof(header), file) != sizeof(header) || memcmp(header, SEGMENT_FORMAT_MAGIC, 4) != 0 ||
+        header[4] != SEGMENT_FORMAT_VERSION || header[5] != SEGMENT_FORMAT_FRAMES_PER_CHUNK) {
         ESP_LOGE(TAG, "%s has a bad segment header", path);
         fclose(file);
         return ESP_FAIL;
     }
 
-    static uint8_t record[MAX_CHUNK_RECORD_BYTES];
-    static uint8_t plaintext[MAX_CHUNK_PLAINTEXT_BYTES];
-    static int16_t pcm[OPUS_FRAME_SIZE_SAMPLES];
+    static uint8_t record[SEGMENT_FORMAT_MAX_CHUNK_RECORD_BYTES];
+    static uint8_t plaintext[SEGMENT_FORMAT_MAX_CHUNK_PLAINTEXT_BYTES];
+    static int16_t pcm[AUDIO_FORMAT_FRAME_SAMPLES];
 
     int frames = 0;
     int nonzero_frames = 0;
@@ -454,7 +449,7 @@ static esp_err_t verify_segment(const char *path, uint16_t segment_index, size_t
 
         uint32_t payload_bytes = (uint32_t)record[0] | ((uint32_t)record[1] << 8) |
                                  ((uint32_t)record[2] << 16) | ((uint32_t)record[3] << 24);
-        if (payload_bytes == 0 || payload_bytes > MAX_CHUNK_PLAINTEXT_BYTES) {
+        if (payload_bytes == 0 || payload_bytes > SEGMENT_FORMAT_MAX_CHUNK_PLAINTEXT_BYTES) {
             ESP_LOGE(TAG, "%s chunk %u has implausible length %u", path, (unsigned)chunk_index,
                      (unsigned)payload_bytes);
             status = ESP_FAIL;
@@ -483,14 +478,14 @@ static esp_err_t verify_segment(const char *path, uint16_t segment_index, size_t
             uint16_t length = (uint16_t)(plaintext[offset] | (plaintext[offset + 1] << 8));
             offset += 2;
 
-            if (length == 0 || length > OPUS_MAX_PACKET_BYTES || offset + length > num_plaintext_bytes) {
+            if (length == 0 || length > AUDIO_FORMAT_MAX_PACKET_BYTES || offset + length > num_plaintext_bytes) {
                 ESP_LOGE(TAG, "%s frame %d has implausible length %u", path, frames, (unsigned)length);
                 status = ESP_FAIL;
                 break;
             }
 
-            int decoded = opus_decode(decoder, plaintext + offset, length, pcm, OPUS_FRAME_SIZE_SAMPLES, 0);
-            if (decoded != OPUS_FRAME_SIZE_SAMPLES) {
+            int decoded = opus_decode(decoder, plaintext + offset, length, pcm, AUDIO_FORMAT_FRAME_SAMPLES, 0);
+            if (decoded != AUDIO_FORMAT_FRAME_SAMPLES) {
                 ESP_LOGE(TAG, "%s frame %d decoded %d samples", path, frames, decoded);
                 status = ESP_FAIL;
                 break;
@@ -535,7 +530,7 @@ esp_err_t self_test_current_session(void) {
     ESP_LOGI(TAG, "session: %d segments, complete=%d", manifest.num_segments, manifest.complete);
 
     int opus_error = OPUS_OK;
-    OpusDecoder *decoder = opus_decoder_create(MICROPHONE_SAMPLE_RATE_HZ, 1, &opus_error);
+    OpusDecoder *decoder = opus_decoder_create(AUDIO_FORMAT_SAMPLE_RATE_HZ, 1, &opus_error);
     CHECK(decoder != NULL && opus_error == OPUS_OK, "opus_decoder_create returned %d", opus_error);
 
     int total_frames = 0;
