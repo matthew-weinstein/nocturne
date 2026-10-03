@@ -189,16 +189,13 @@ def report(result):
         print(f"  FAIL:    {error}")
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("inputs", nargs="+", help="segment files or session directories")
-    parser.add_argument("--segment", type=int, help="segment index in the AAD, instead of the one in the filename")
+def add_key_arguments(parser):
     parser.add_argument("--key", help="32-byte key in hex, instead of deriving one")
     parser.add_argument("--passphrase", default=os.environ.get("NOCTURNE_PASSPHRASE"), help="passphrase to derive the key from")
     parser.add_argument("--salt-mac", help="6-byte device MAC in hex, the start of the salt")
-    parser.add_argument("--out-dir", help="write each segment's plaintext here as seg_NNNN.packets")
-    args = parser.parse_args()
 
+
+def key_from_args(args):
     if args.key:
         key = bytes.fromhex(args.key)
     elif args.passphrase and args.salt_mac:
@@ -208,6 +205,19 @@ def main():
 
     if len(key) != KEY_BYTES:
         sys.exit(f"FAIL: key is {len(key)} bytes, expected {KEY_BYTES}")
+
+    return key
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("inputs", nargs="+", help="segment files or session directories")
+    parser.add_argument("--segment", type=int, help="segment index in the AAD, instead of the one in the filename")
+    add_key_arguments(parser)
+    parser.add_argument("--out-dir", help="write each segment's plaintext here as seg_NNNN.packets")
+    args = parser.parse_args()
+
+    key = key_from_args(args)
 
     segments = collect_segments(args.inputs)
     if not segments:
