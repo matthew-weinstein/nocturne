@@ -7,4 +7,5 @@ esp_err_t self_test_key_derivation(void);
 esp_err_t self_test_chunk_crypto(void);
 esp_err_t self_test_sha1_stream(void);
 esp_err_t self_test_current_session(void);
+esp_err_t self_test_supervisor(void);
 esp_err_t self_test_run_all(void);
