@@ -11,7 +11,6 @@
 #include "esp_mac.h"
 #include "esp_timer.h"
 #include "psa/crypto.h"
-#include "secrets.h"
 
 #define TAG "key_manager"
 
@@ -82,6 +81,7 @@ esp_err_t key_manager_derive(const char *passphrase, const uint8_t *salt, size_t
 }
 
 static void derivation_task(void *arg) {
+    const char *passphrase = arg;
     uint8_t salt[KEY_MANAGER_SALT_BYTES];
     esp_err_t status = key_manager_device_salt(salt, sizeof(salt));
     if (status != ESP_OK) {
@@ -91,7 +91,7 @@ static void derivation_task(void *arg) {
     }
 
     int64_t started_us = esp_timer_get_time();
-    status = key_manager_derive(NOCTURNE_PASSPHRASE, salt, sizeof(salt), device_key, sizeof(device_key));
+    status = key_manager_derive(passphrase, salt, sizeof(salt), device_key, sizeof(device_key));
     if (status != ESP_OK) {
         xEventGroupSetBits(key_events, KEY_FAILED_BIT);
         vTaskDelete(NULL);
@@ -105,7 +105,10 @@ static void derivation_task(void *arg) {
     vTaskDelete(NULL);
 }
 
-esp_err_t key_manager_init(void) {
+esp_err_t key_manager_init(const char *passphrase) {
+    if (passphrase == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
     if (derivation_started) {
         return ESP_OK;
     }
@@ -113,7 +116,7 @@ esp_err_t key_manager_init(void) {
     key_events = xEventGroupCreateStatic(&key_events_storage);
 
     BaseType_t created = xTaskCreatePinnedToCore(derivation_task, "key_derive", DERIVATION_TASK_STACK_BYTES,
-                                                 NULL, tskIDLE_PRIORITY, NULL, DERIVATION_TASK_CORE);
+                                                 (void *)passphrase, tskIDLE_PRIORITY, NULL, DERIVATION_TASK_CORE);
     if (created != pdPASS) {
         ESP_LOGE(TAG, "could not start the derivation task");
         return ESP_ERR_NO_MEM;

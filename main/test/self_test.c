@@ -163,7 +163,7 @@ esp_err_t self_test_key_derivation(void) {
           "an empty passphrase was accepted");
 
     ESP_LOGI(TAG, "key: deriving the device key");
-    CHECK(key_manager_init() == ESP_OK, "key_manager_init failed");
+    CHECK(key_manager_init(NOCTURNE_PASSPHRASE) == ESP_OK, "key_manager_init failed");
     CHECK(key_manager_wait_ready(KEY_DERIVATION_TIMEOUT_MS) == ESP_OK, "device key not ready in time");
     const uint8_t *device_key = key_manager_key();
     CHECK(device_key != NULL, "key_manager_key returned NULL after init");

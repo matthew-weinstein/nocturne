@@ -205,7 +205,7 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(ret);
 
-    ESP_ERROR_CHECK(key_manager_init());
+    ESP_ERROR_CHECK(key_manager_init(NOCTURNE_PASSPHRASE));
     ESP_ERROR_CHECK(led_init());
     ESP_ERROR_CHECK(supervisor_init());
     ESP_ERROR_CHECK(button_init(on_button));
