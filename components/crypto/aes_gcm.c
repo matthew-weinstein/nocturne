@@ -78,6 +78,7 @@ esp_err_t aes_gcm_seal_chunk(const uint8_t *key, uint16_t segment_index, uint32_
 
     write_u32(out_record, (uint32_t)num_plaintext_bytes);
     *out_record_bytes = record_bytes;
+
     return ESP_OK;
 }
 
@@ -95,9 +96,11 @@ esp_err_t aes_gcm_open_chunk(const uint8_t *key, uint16_t segment_index, uint32_
     }
 
     uint32_t num_cipher_bytes = read_u32(record);
+
     if (num_cipher_bytes == 0 || num_cipher_bytes > num_record_bytes - AES_GCM_RECORD_OVERHEAD_BYTES) {
         return ESP_ERR_INVALID_SIZE;
     }
+
     if (num_cipher_bytes > max_plaintext_bytes) {
         return ESP_ERR_INVALID_SIZE;
     }
@@ -122,6 +125,7 @@ esp_err_t aes_gcm_open_chunk(const uint8_t *key, uint16_t segment_index, uint32_
     if (status == PSA_ERROR_INVALID_SIGNATURE) {
         return ESP_ERR_INVALID_CRC;
     }
+
     if (status != PSA_SUCCESS || opened_bytes != num_cipher_bytes) {
         ESP_LOGE(TAG, "opening chunk %u of segment %u failed with PSA status %d",
                  (unsigned)chunk_index, (unsigned)segment_index, (int)status);
@@ -130,5 +134,6 @@ esp_err_t aes_gcm_open_chunk(const uint8_t *key, uint16_t segment_index, uint32_
 
     *out_plaintext_bytes = opened_bytes;
     *out_record_bytes = num_cipher_bytes + AES_GCM_RECORD_OVERHEAD_BYTES;
+    
     return ESP_OK;
 }
