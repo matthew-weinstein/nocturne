@@ -1,5 +1,9 @@
 #include "button_fsm.h"
 
+_Static_assert(BUTTON_FSM_LONG_PRESS_MS % BUTTON_FSM_POLL_MS == 0 &&
+               BUTTON_FSM_VERY_LONG_PRESS_MS % BUTTON_FSM_POLL_MS == 0,
+               "hold thresholds are matched exactly, so they must be whole poll periods");
+
 bool button_fsm_step(button_fsm_t *fsm, bool raw_pressed, button_event_t *out_event) {
     if (raw_pressed == fsm->pressed) {
         fsm->unstable_ms = 0;
