@@ -23,7 +23,6 @@ esp_err_t audio_encoder_init(void) {
                                   OPUS_CHANNELS,
                                   OPUS_APPLICATION_MODE,
                                   &opus_error);
-
     if (encoder == NULL || opus_error != OPUS_OK) {
         return ESP_FAIL;
     }
@@ -41,13 +40,11 @@ esp_err_t audio_encoder_init(void) {
 
 esp_err_t audio_encoder_encode_frame(const int16_t *pcm, uint8_t *out_bytes, size_t max_bytes, size_t *num_bytes) {
     opus_int32 encoded = opus_encode(encoder, pcm, AUDIO_FORMAT_FRAME_SAMPLES, out_bytes, (opus_int32)max_bytes);
-
     if (encoded < 0) {
         return ESP_FAIL;
     }
 
     *num_bytes = (size_t)encoded;
-
     return ESP_OK;
 }
 
@@ -56,6 +53,5 @@ esp_err_t audio_encoder_deinit(void) {
         opus_encoder_destroy(encoder);
         encoder = NULL;
     }
-    
     return ESP_OK;
 }

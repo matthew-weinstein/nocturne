@@ -15,7 +15,6 @@ esp_err_t i2s_microphone_init(void) {
     i2s_chan_config_t channel_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO, I2S_ROLE_MASTER);
 
     esp_err_t status = i2s_new_channel(&channel_cfg, NULL, &microphone_channel);
-
     if (status != ESP_OK) {
         return status;
     }
@@ -40,7 +39,6 @@ esp_err_t i2s_microphone_init(void) {
     std_cfg.slot_cfg.slot_mask = I2S_STD_SLOT_LEFT;
 
     status = i2s_channel_init_std_mode(microphone_channel, &std_cfg);
-
     if (status != ESP_OK) {
         return status;
     }
@@ -55,6 +53,5 @@ esp_err_t i2s_microphone_read(int32_t *out_samples, size_t max_samples, size_t *
                                         &num_bytes, portMAX_DELAY);
 
     *num_samples = num_bytes / BYTES_PER_SAMPLE;
-    
     return status;
 }
