@@ -11,6 +11,7 @@ static size_t num_stored;
 
 esp_err_t ring_buffer_init(size_t capacity_samples) {
     buffer = heap_caps_malloc(capacity_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+    
     if (buffer == NULL) {
         return ESP_ERR_NO_MEM;
     }
