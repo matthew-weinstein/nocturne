@@ -7,6 +7,7 @@
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
 
+#include "esp_bit_defs.h"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_timer.h"
