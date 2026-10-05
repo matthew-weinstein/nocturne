@@ -1,17 +1,12 @@
 #include "button.h"
 #include <stdbool.h>
-#include <stdint.h>
+#include "button_fsm.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 #define BUTTON_PIN GPIO_NUM_4
-
-#define POLL_MS            20
-#define DEBOUNCE_MS        50
-#define LONG_PRESS_MS      2000
-#define VERY_LONG_PRESS_MS 10000
 
 #define TASK_STACK_BYTES 4096
 #define TASK_PRIORITY    10
@@ -39,41 +34,15 @@ static void emit(button_event_t event) {
 static void hmi_task(void *arg) {
     (void)arg;
 
-    bool pressed = false;
-    uint32_t unstable_ms = 0;
-    uint32_t held_ms = 0;
+    button_fsm_t fsm = {0};
     TickType_t last_wake = xTaskGetTickCount();
 
     for (;;) {
-        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(POLL_MS));
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(BUTTON_FSM_POLL_MS));
 
-        if (read_pressed() == pressed) {
-            unstable_ms = 0;
-        } else {
-            unstable_ms += POLL_MS;
-
-            if (unstable_ms >= DEBOUNCE_MS) {
-                unstable_ms = 0;
-                pressed = !pressed;
-
-                if (pressed) {
-                    held_ms = 0;
-                } else if (held_ms < LONG_PRESS_MS) {
-                    emit(BUTTON_EVENT_SHORT);
-                }
-            }
-        }
-
-        if (!pressed) {
-            continue;
-        }
-
-        held_ms += POLL_MS;
-        
-        if (held_ms == LONG_PRESS_MS) {
-            emit(BUTTON_EVENT_LONG);
-        } else if (held_ms == VERY_LONG_PRESS_MS) {
-            emit(BUTTON_EVENT_VERY_LONG);
+        button_event_t event;
+        if (button_fsm_step(&fsm, read_pressed(), &event)) {
+            emit(event);
         }
     }
 }
@@ -82,6 +51,7 @@ esp_err_t button_init(button_handler_t on_event) {
     if (on_event == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
+
     if (handler != NULL) {
         return ESP_ERR_INVALID_STATE;
     }

@@ -19,7 +19,14 @@ typedef enum {
     LED_COLOR_COUNT,
 } led_color_t;
 
+typedef struct {
+    led_color_t color;
+    uint32_t on_ms;
+    uint32_t off_ms;
+} led_pattern_t;
+
 esp_err_t led_init(void);
+esp_err_t led_start(const led_pattern_t *pattern);
 esp_err_t led_off(void);
 esp_err_t led_solid(led_color_t color);
 esp_err_t led_flash(led_color_t color, uint32_t duration_ms);
