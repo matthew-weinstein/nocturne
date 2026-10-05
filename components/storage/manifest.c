@@ -51,17 +51,14 @@ static void apply_record(manifest_t *manifest, const manifest_record_t *record) 
             }
         }
         break;
-
     case RECORD_SEGMENT_UPLOADED:
         if (record->index < MANIFEST_MAX_SEGMENTS) {
             manifest->segments[record->index].uploaded = true;
         }
         break;
-
     case RECORD_SESSION_COMPLETE:
         manifest->complete = true;
         break;
-
     default:
         break;
     }
@@ -131,7 +128,6 @@ esp_err_t manifest_open(manifest_t *manifest, const char *path) {
             return ESP_FAIL;
         }
     }
-
     return ESP_OK;
 }
 

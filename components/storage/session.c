@@ -12,7 +12,9 @@
 #include "key_manager.h"
 #include "manifest.h"
 #include "sd_card.h"
+#include "segment_cursor.h"
 #include "segment_format.h"
+#include "session_id.h"
 #include "sdkconfig.h"
 
 #define MAX_COLLISION_SUFFIX 99
@@ -31,27 +33,17 @@ static char session_dir[SESSION_DIR_LEN];
 static char manifest_path[PATH_LEN];
 
 static FILE *segment_file;
-static int frames_in_segment;
+static segment_cursor_t cursor;
 static size_t bytes_in_segment;
 
 static uint8_t chunk_plaintext[SEGMENT_FORMAT_MAX_CHUNK_PLAINTEXT_BYTES];
 static uint8_t chunk_record[SEGMENT_FORMAT_MAX_CHUNK_RECORD_BYTES];
 static size_t chunk_plaintext_bytes;
-static int frames_in_chunk;
 static uint32_t chunk_index;
 
-static void build_session_id(char *out, size_t out_len) {
-    time_t now = time(NULL);
-    struct tm local;
-    localtime_r(&now, &local);
-    strftime(out, out_len, "%Y%m%d_%H%M", &local);
-}
-
 static esp_err_t write_segment_header(void) {
-    uint8_t header[SEGMENT_FORMAT_HEADER_BYTES] = {0};
-    memcpy(header, SEGMENT_FORMAT_MAGIC, 4);
-    header[4] = SEGMENT_FORMAT_VERSION;
-    header[5] = SEGMENT_FORMAT_FRAMES_PER_CHUNK;
+    uint8_t header[SEGMENT_FORMAT_HEADER_BYTES];
+    segment_format_header(header);
 
     if (fwrite(header, 1, sizeof(header), segment_file) != sizeof(header)) {
         return ESP_FAIL;
@@ -76,8 +68,7 @@ static esp_err_t open_segment(void) {
         return ESP_FAIL;
     }
 
-    frames_in_segment = 0;
-    frames_in_chunk = 0;
+    segment_cursor_reset(&cursor, FRAMES_PER_SEGMENT);
     chunk_plaintext_bytes = 0;
     chunk_index = 0;
     bytes_in_segment = 0;
@@ -113,7 +104,6 @@ static esp_err_t flush_chunk(void) {
     bytes_in_segment += record_bytes;
     chunk_index++;
     chunk_plaintext_bytes = 0;
-    frames_in_chunk = 0;
     return ESP_OK;
 }
 
@@ -142,11 +132,12 @@ esp_err_t session_start(void) {
 
     mkdir(SESSIONS_DIR, 0755);
 
-    char base_id[16];
-    build_session_id(base_id, sizeof(base_id));
+    time_t now = time(NULL);
+    struct tm local;
+    localtime_r(&now, &local);
 
     char session_id[MANIFEST_SESSION_ID_LEN];
-    snprintf(session_id, sizeof(session_id), "%s", base_id);
+    session_id_format(&local, 0, session_id, sizeof(session_id));
 
     for (int suffix = 1; ; suffix++) {
         snprintf(session_dir, sizeof(session_dir), "%s/%s", SESSIONS_DIR, session_id);
@@ -158,13 +149,12 @@ esp_err_t session_start(void) {
             return ESP_FAIL;
         }
 
-        snprintf(session_id, sizeof(session_id), "%s_%02d", base_id, suffix);
+        session_id_format(&local, suffix, session_id, sizeof(session_id));
     }
 
     snprintf(manifest_path, sizeof(manifest_path), "%s/manifest.bin", session_dir);
 
-    esp_err_t status = manifest_create(&manifest, manifest_path,
-                                       session_id, (int64_t)time(NULL));
+    esp_err_t status = manifest_create(&manifest, manifest_path, session_id, (int64_t)now);
     if (status != ESP_OK) {
         return status;
     }
@@ -190,32 +180,24 @@ esp_err_t session_resume(const char *existing_session_dir) {
 }
 
 esp_err_t session_write_packet(const uint8_t *packet, size_t num_bytes) {
-    if (num_bytes == 0 || num_bytes > AUDIO_FORMAT_MAX_PACKET_BYTES) {
-        return ESP_ERR_INVALID_SIZE;
+    esp_err_t status = segment_format_append_frame(chunk_plaintext, sizeof(chunk_plaintext),
+                                                   &chunk_plaintext_bytes, packet, num_bytes);
+    if (status != ESP_OK) {
+        return status;
     }
 
-    chunk_plaintext[chunk_plaintext_bytes++] = (uint8_t)(num_bytes & 0xFF);
-    chunk_plaintext[chunk_plaintext_bytes++] = (uint8_t)(num_bytes >> 8);
-    memcpy(&chunk_plaintext[chunk_plaintext_bytes], packet, num_bytes);
-    chunk_plaintext_bytes += num_bytes;
-    frames_in_chunk++;
-    frames_in_segment++;
-
-    if (frames_in_chunk >= SEGMENT_FORMAT_FRAMES_PER_CHUNK) {
-        esp_err_t status = flush_chunk();
-        if (status != ESP_OK) {
-            return status;
-        }
-    }
-
-    if (frames_in_segment >= FRAMES_PER_SEGMENT) {
-        esp_err_t status = close_segment();
+    switch (segment_cursor_add_frame(&cursor)) {
+    case SEGMENT_CURSOR_FLUSH_CHUNK:
+        return flush_chunk();
+    case SEGMENT_CURSOR_CLOSE_SEGMENT:
+        status = close_segment();
         if (status != ESP_OK) {
             return status;
         }
         return open_segment();
+    case SEGMENT_CURSOR_CONTINUE:
+        break;
     }
-
     return ESP_OK;
 }
 
