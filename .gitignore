@@ -40,6 +40,7 @@ sdkconfig
 **/components/.idf/
 # For modern ESP-IDF component manager
 managed_components/
+components/*/host_test/dependencies.lock
 # If ESP-IDF tools are installed/referenced locally to the project
 .espressif/
 
@@ -55,6 +56,7 @@ CTestTestfile.cmake
 *.pyo
 *.pyd
 __pycache__/
+.pytest_cache/
 *.egg-info/
 dist/
 
