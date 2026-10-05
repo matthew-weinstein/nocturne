@@ -29,7 +29,6 @@ esp_err_t sha1_stream_file(const char *path, char *out_hex, size_t max_hex, size
     }
 
     FILE *file = fopen(path, "rb");
-
     if (file == NULL) {
         ESP_LOGE(TAG, "could not open %s", path);
         return ESP_ERR_NOT_FOUND;
@@ -41,7 +40,6 @@ esp_err_t sha1_stream_file(const char *path, char *out_hex, size_t max_hex, size
 
     while (status == PSA_SUCCESS) {
         size_t num_read = fread(read_buffer, 1, sizeof(read_buffer), file);
-
         if (num_read == 0) {
             break;
         }
@@ -65,7 +63,6 @@ esp_err_t sha1_stream_file(const char *path, char *out_hex, size_t max_hex, size
     if (status == PSA_SUCCESS) {
         status = psa_hash_finish(&operation, digest, sizeof(digest), &digest_bytes);
     }
-
     if (status != PSA_SUCCESS || digest_bytes != SHA1_STREAM_DIGEST_BYTES) {
         ESP_LOGE(TAG, "hashing %s failed with PSA status %d", path, (int)status);
         psa_hash_abort(&operation);
@@ -74,6 +71,5 @@ esp_err_t sha1_stream_file(const char *path, char *out_hex, size_t max_hex, size
 
     format_hex(digest, out_hex);
     *out_num_bytes = num_bytes;
-    
     return ESP_OK;
 }

@@ -56,20 +56,16 @@ esp_err_t key_manager_derive(const char *passphrase, const uint8_t *salt, size_t
     psa_key_derivation_operation_t operation = PSA_KEY_DERIVATION_OPERATION_INIT;
 
     psa_status_t status = psa_key_derivation_setup(&operation, PSA_ALG_PBKDF2_HMAC(PSA_ALG_SHA_256));
-
     if (status == PSA_SUCCESS) {
         status = psa_key_derivation_input_integer(&operation, PSA_KEY_DERIVATION_INPUT_COST, PBKDF2_ITERATIONS);
     }
-
     if (status == PSA_SUCCESS) {
         status = psa_key_derivation_input_bytes(&operation, PSA_KEY_DERIVATION_INPUT_SALT, salt, salt_len);
     }
-
     if (status == PSA_SUCCESS) {
         status = psa_key_derivation_input_bytes(&operation, PSA_KEY_DERIVATION_INPUT_PASSWORD,
                                                 (const uint8_t *)passphrase, strlen(passphrase));
     }
-
     if (status == PSA_SUCCESS) {
         status = psa_key_derivation_output_bytes(&operation, out_key, out_key_len);
     }
@@ -97,8 +93,8 @@ static void derivation_task(void *arg) {
     }
 
     int64_t started_us = esp_timer_get_time();
-    status = key_manager_derive(passphrase, salt, sizeof(salt), device_key, sizeof(device_key));
 
+    status = key_manager_derive(passphrase, salt, sizeof(salt), device_key, sizeof(device_key));
     if (status != ESP_OK) {
         xEventGroupSetBits(key_events, KEY_FAILED_BIT);
         vTaskDelete(NULL);
@@ -125,14 +121,12 @@ esp_err_t key_manager_init(const char *passphrase) {
 
     BaseType_t created = xTaskCreatePinnedToCore(derivation_task, "key_derive", DERIVATION_TASK_STACK_BYTES,
                                                  (void *)passphrase, tskIDLE_PRIORITY, NULL, DERIVATION_TASK_CORE);
-
     if (created != pdPASS) {
         ESP_LOGE(TAG, "could not start the derivation task");
         return ESP_ERR_NO_MEM;
     }
 
     derivation_started = true;
-
     return ESP_OK;
 }
 
