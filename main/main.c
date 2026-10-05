@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include "audio_format.h"
 #include "i2s_microphone.h"
+#include "pcm_convert.h"
 #include "sd_card.h"
 #include "audio_encoder.h"
 #include "ring_buffer.h"
@@ -36,8 +37,6 @@
 #endif
 
 static int16_t frame[AUDIO_FORMAT_FRAME_SAMPLES];
-
-#define SAMPLE_SHIFT 9  // Controls amplitude of records; find optimal value
 
 #define BLOCK_SIZE_SAMPLES 512
 
@@ -79,6 +78,7 @@ static void do_ota(void)
 
     esp_app_desc_t incoming;
     err = esp_https_ota_get_img_desc(handle, &incoming);
+    
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "could not read image header: %s", esp_err_to_name(err));
         esp_https_ota_abort(handle);
@@ -98,9 +98,11 @@ static void do_ota(void)
 
     while (1) {
         err = esp_https_ota_perform(handle);
+
         if (err != ESP_ERR_HTTPS_OTA_IN_PROGRESS) {
             break;
         }
+        
         ESP_LOGI(TAG, "%d bytes read", esp_https_ota_get_image_len_read(handle));
     }
 
@@ -111,6 +113,7 @@ static void do_ota(void)
     }
 
     err = esp_https_ota_finish(handle);
+
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "update complete, rebooting");
         vTaskDelay(pdMS_TO_TICKS(1000));
@@ -151,10 +154,8 @@ static void wifi_init_sta(void)
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(
-        WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_handler, NULL, NULL));
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(
-        IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_handler, NULL, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_handler, NULL, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_handler, NULL, NULL));
 
     wifi_config_t wifi_config = {
         .sta = {
@@ -184,16 +185,19 @@ static void on_button(button_event_t event) {
         [BUTTON_EVENT_LONG]      = SUPERVISOR_EVENT_LONG_PRESS,
         [BUTTON_EVENT_VERY_LONG] = SUPERVISOR_EVENT_VERY_LONG_PRESS,
     };
+
     supervisor_post(events[event]);
 }
 
 void app_main(void)
 {
     esp_err_t ret = nvs_flash_init();
+
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
     }
+
     ESP_ERROR_CHECK(ret);
 
     ESP_ERROR_CHECK(key_manager_init(NOCTURNE_PASSPHRASE));
@@ -208,6 +212,7 @@ void app_main(void)
 
     const esp_partition_t *running = esp_ota_get_running_partition();
     esp_ota_img_states_t state;
+    
     if (esp_ota_get_state_partition(running, &state) == ESP_OK) {
         if (state == ESP_OTA_IMG_PENDING_VERIFY) {
             ESP_LOGI(TAG, "image pending verify, marking valid");
@@ -245,9 +250,7 @@ void app_main(void)
             continue;
         }
 
-        for (size_t i = 0; i < num_samples; i++) {
-            pcm[i] = (int16_t)(samples[i] >> SAMPLE_SHIFT);
-        }
+        pcm_convert_from_i2s(samples, pcm, num_samples);
 
         if (ring_buffer_write(pcm, num_samples) != ESP_OK) {
             overflow_count++;

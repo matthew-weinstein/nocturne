@@ -47,6 +47,7 @@ esp_err_t audio_encoder_encode_frame(const int16_t *pcm, uint8_t *out_bytes, siz
     }
 
     *num_bytes = (size_t)encoded;
+
     return ESP_OK;
 }
 
@@ -55,5 +56,6 @@ esp_err_t audio_encoder_deinit(void) {
         opus_encoder_destroy(encoder);
         encoder = NULL;
     }
+    
     return ESP_OK;
 }

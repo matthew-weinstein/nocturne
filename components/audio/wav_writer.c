@@ -54,11 +54,13 @@ static void build_header(uint8_t *header, uint32_t sample_rate, uint32_t num_sam
 esp_err_t wav_writer_open(wav_writer_t **writer, const char *path, uint32_t sample_rate)
 {
     wav_writer_t *new_writer = calloc(1, sizeof(wav_writer_t));
+
     if (new_writer == NULL) {
         return ESP_ERR_NO_MEM;
     }
 
     new_writer->file = fopen(path, "wb");
+
     if (new_writer->file == NULL) {
         free(new_writer);
         return ESP_FAIL;
@@ -77,17 +79,20 @@ esp_err_t wav_writer_open(wav_writer_t **writer, const char *path, uint32_t samp
     }
 
     *writer = new_writer;
+
     return ESP_OK;
 }
 
 esp_err_t wav_writer_write(wav_writer_t *writer, const int16_t *samples, size_t num_samples)
 {
     size_t written = fwrite(samples, sizeof(int16_t), num_samples, writer->file);
+
     if (written != num_samples) {
         return ESP_FAIL;
     }
 
     writer->num_samples_written += num_samples;
+
     return ESP_OK;
 }
 
@@ -105,5 +110,6 @@ esp_err_t wav_writer_close(wav_writer_t *writer)
 
     fclose(writer->file);
     free(writer);
+    
     return status;
 }
