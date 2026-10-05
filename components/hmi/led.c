@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include "driver/gpio.h"
 #include "driver/ledc.h"
+#include "led_pattern.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -46,16 +47,16 @@ static const struct {
 static esp_timer_handle_t pattern_timer;
 static SemaphoreHandle_t pattern_lock;
 static int64_t deadline_us = INT64_MAX;
-static led_color_t pattern_color;
-static uint32_t pattern_on_ms;
-static uint32_t pattern_off_ms;
+static led_pattern_t pattern;
 static bool pattern_lit;
 
 static esp_err_t set_duty(ledc_channel_t channel, uint32_t duty) {
     esp_err_t status = ledc_set_duty(LED_SPEED_MODE, channel, duty);
+
     if (status != ESP_OK) {
         return status;
     }
+
     return ledc_update_duty(LED_SPEED_MODE, channel);
 }
 
@@ -66,15 +67,18 @@ static esp_err_t show(led_color_t color) {
     if (status != ESP_OK) {
         return status;
     }
+
     status = set_duty(channels[1].channel, duty->green);
     if (status != ESP_OK) {
         return status;
     }
+
     return set_duty(channels[2].channel, duty->blue);
 }
 
 static esp_err_t schedule(uint32_t duration_ms) {
     deadline_us = esp_timer_get_time() + (int64_t)duration_ms * 1000;
+
     return esp_timer_start_once(pattern_timer, (uint64_t)duration_ms * 1000);
 }
 
@@ -84,11 +88,12 @@ static void on_pattern_timer(void *arg) {
 
     if (esp_timer_get_time() >= deadline_us) {
         deadline_us = INT64_MAX;
-        pattern_lit = pattern_off_ms > 0 && !pattern_lit;
+        led_pattern_step_t step = led_pattern_next(&pattern, pattern_lit);
+        pattern_lit = step.lit;
 
-        esp_err_t status = show(pattern_lit ? pattern_color : LED_COLOR_OFF);
-        if (status == ESP_OK && pattern_off_ms > 0) {
-            status = schedule(pattern_lit ? pattern_on_ms : pattern_off_ms);
+        esp_err_t status = show(step.lit ? pattern.color : LED_COLOR_OFF);
+        if (status == ESP_OK && step.delay_ms > 0) {
+            status = schedule(step.delay_ms);
         }
         if (status != ESP_OK) {
             ESP_LOGW(TAG, "pattern step failed: %s", esp_err_to_name(status));
@@ -96,32 +101,6 @@ static void on_pattern_timer(void *arg) {
     }
 
     xSemaphoreGive(pattern_lock);
-}
-
-static esp_err_t start_pattern(led_color_t color, uint32_t on_ms, uint32_t off_ms) {
-    if (color >= LED_COLOR_COUNT) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    if (pattern_lock == NULL) {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    xSemaphoreTake(pattern_lock, portMAX_DELAY);
-
-    esp_timer_stop(pattern_timer);
-    deadline_us = INT64_MAX;
-    pattern_color = color;
-    pattern_on_ms = on_ms;
-    pattern_off_ms = off_ms;
-    pattern_lit = true;
-
-    esp_err_t status = show(color);
-    if (status == ESP_OK && on_ms > 0) {
-        status = schedule(on_ms);
-    }
-
-    xSemaphoreGive(pattern_lock);
-    return status;
 }
 
 esp_err_t led_init(void) {
@@ -158,7 +137,8 @@ esp_err_t led_init(void) {
         .callback = on_pattern_timer,
         .name     = "led_pattern",
     };
-    status = esp_timer_create(&timer_args, &pattern_timer);
+
+    status = esp_timer_create(&timer_args, &pattern_timer);    
     if (status != ESP_OK) {
         return status;
     }
@@ -167,24 +147,51 @@ esp_err_t led_init(void) {
     return pattern_lock != NULL ? ESP_OK : ESP_ERR_NO_MEM;
 }
 
+esp_err_t led_start(const led_pattern_t *requested) {
+    if (requested == NULL || !led_pattern_valid(requested)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (pattern_lock == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    xSemaphoreTake(pattern_lock, portMAX_DELAY);
+
+    esp_timer_stop(pattern_timer);
+    deadline_us = INT64_MAX;
+    pattern = *requested;
+
+    led_pattern_step_t step = led_pattern_first(&pattern);
+    pattern_lit = step.lit;
+
+    esp_err_t status = show(pattern.color);
+    if (status == ESP_OK && step.delay_ms > 0) {
+        status = schedule(step.delay_ms);
+    }
+
+    xSemaphoreGive(pattern_lock);
+    return status;
+}
+
 esp_err_t led_off(void) {
-    return start_pattern(LED_COLOR_OFF, 0, 0);
+    return led_start(&(led_pattern_t){ LED_COLOR_OFF, 0, 0 });
 }
 
 esp_err_t led_solid(led_color_t color) {
-    return start_pattern(color, 0, 0);
+    return led_start(&(led_pattern_t){ color, 0, 0 });
 }
 
 esp_err_t led_flash(led_color_t color, uint32_t duration_ms) {
     if (duration_ms == 0) {
         return ESP_ERR_INVALID_ARG;
     }
-    return start_pattern(color, duration_ms, 0);
+    return led_start(&(led_pattern_t){ color, duration_ms, 0 });
 }
 
 esp_err_t led_pulse(led_color_t color, uint32_t on_ms, uint32_t off_ms) {
     if (on_ms == 0 || off_ms == 0) {
         return ESP_ERR_INVALID_ARG;
     }
-    return start_pattern(color, on_ms, off_ms);
+    return led_start(&(led_pattern_t){ color, on_ms, off_ms });
 }
