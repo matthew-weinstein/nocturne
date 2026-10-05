@@ -1,0 +1,48 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v6.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run host tests
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          . "$IDF_PATH/export.sh"
+          python tools/run_host_tests.py
+
+  tools-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r tools/requirements.txt pytest
+      - run: pytest tools/tests
+
+  firmware-build:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v6.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use the secrets template
+        run: cp main/secrets.h.example main/secrets.h
+      - name: Build the default firmware
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          . "$IDF_PATH/export.sh"
+          idf.py build
+      - name: Build the system-test firmware
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          idf.py -B build-test -D SDKCONFIG=build-test/sdkconfig \
+            -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.system_test" build
