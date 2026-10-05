@@ -104,6 +104,9 @@ esp_err_t supervisor_init(void) {
 }
 
 esp_err_t supervisor_post(supervisor_event_t event) {
+    if (event >= SUPERVISOR_EVENT_COUNT) {
+        return ESP_ERR_INVALID_ARG;
+    }
     if (events == NULL) {
         return ESP_ERR_INVALID_STATE;
     }

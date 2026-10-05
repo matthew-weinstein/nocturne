@@ -21,6 +21,7 @@ typedef enum {
     SUPERVISOR_EVENT_FINALIZE_OK,
     SUPERVISOR_EVENT_FINALIZE_FAILED,
     SUPERVISOR_EVENT_FAULT,
+    SUPERVISOR_EVENT_COUNT,
 } supervisor_event_t;
 
 esp_err_t supervisor_init(void);
