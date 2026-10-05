@@ -19,6 +19,7 @@ static void format_hex(const uint8_t *digest, char *out_hex) {
         out_hex[i * 2] = digits[digest[i] >> 4];
         out_hex[i * 2 + 1] = digits[digest[i] & 0x0f];
     }
+
     out_hex[SHA1_STREAM_DIGEST_BYTES * 2] = '\0';
 }
 
@@ -28,6 +29,7 @@ esp_err_t sha1_stream_file(const char *path, char *out_hex, size_t max_hex, size
     }
 
     FILE *file = fopen(path, "rb");
+
     if (file == NULL) {
         ESP_LOGE(TAG, "could not open %s", path);
         return ESP_ERR_NOT_FOUND;
@@ -39,6 +41,7 @@ esp_err_t sha1_stream_file(const char *path, char *out_hex, size_t max_hex, size
 
     while (status == PSA_SUCCESS) {
         size_t num_read = fread(read_buffer, 1, sizeof(read_buffer), file);
+
         if (num_read == 0) {
             break;
         }
@@ -71,5 +74,6 @@ esp_err_t sha1_stream_file(const char *path, char *out_hex, size_t max_hex, size
 
     format_hex(digest, out_hex);
     *out_num_bytes = num_bytes;
+    
     return ESP_OK;
 }
