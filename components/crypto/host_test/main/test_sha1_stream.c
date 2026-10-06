@@ -1,14 +1,11 @@
 #include <stdio.h>
 #include <unistd.h>
+#include "kat.h"
 #include "sha1_stream.h"
 #include "tests.h"
 #include "unity.h"
 
-#define PATTERN_BYTES 10000
-#define MISSING_PATH  "/tmp/nocturne_missing.bin"
-
-static const char pattern_hex[] = "504bab9f255da75e2c3c08dfbc11061a05996bbf";
-static const char empty_hex[] = "da39a3ee5e6b4b0d3255bfef95601890afd80709";
+#define MISSING_PATH "/tmp/nocturne_missing.bin"
 
 static char path[64];
 
@@ -36,11 +33,11 @@ static void assert_digest(size_t num_bytes, const char *expected_hex) {
 }
 
 static void test_pattern_spanning_several_reads_matches_hashlib(void) {
-    assert_digest(PATTERN_BYTES, pattern_hex);
+    assert_digest(KAT_SHA1_PATTERN_BYTES, KAT_SHA1_PATTERN_HEX);
 }
 
 static void test_empty_file_matches_hashlib(void) {
-    assert_digest(0, empty_hex);
+    assert_digest(0, KAT_SHA1_EMPTY_HEX);
 }
 
 static void test_missing_file_and_short_buffer_are_rejected(void) {
