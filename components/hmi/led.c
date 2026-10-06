@@ -9,9 +9,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
-#define LED_RED_PIN   GPIO_NUM_5
+#define LED_RED_PIN   GPIO_NUM_8
 #define LED_GREEN_PIN GPIO_NUM_16
-#define LED_BLUE_PIN  GPIO_NUM_8
+#define LED_BLUE_PIN  GPIO_NUM_5
 
 #define LED_SPEED_MODE LEDC_LOW_SPEED_MODE
 #define LED_TIMER      LEDC_TIMER_0
