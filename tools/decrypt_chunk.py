@@ -30,7 +30,7 @@ RECORD_OVERHEAD_BYTES = LENGTH_FIELD_BYTES + NONCE_BYTES + TAG_BYTES
 PBKDF2_ITERATIONS = 100000
 SALT_SUFFIX = b"nocturne"
 
-# The known-answer vector in main/test/self_test.c.
+# The known-answer vector in components/crypto/test_vectors/kat.c.
 TEST_PASSPHRASE = "nocturne-test-passphrase"
 TEST_SALT_MAC = "001122334455"
 TEST_SEGMENT_INDEX = 42

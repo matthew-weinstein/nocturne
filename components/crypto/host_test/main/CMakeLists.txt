@@ -5,10 +5,12 @@ idf_component_register(SRCS "test_main.c"
                             "test_aes_gcm.c"
                             "test_key_manager.c"
                             "test_sha1_stream.c"
+                            "${crypto_dir}/test_vectors/kat.c"
                             "${crypto_dir}/aes_gcm.c"
                             "${crypto_dir}/key_manager.c"
                             "${crypto_dir}/sha1_stream.c"
                        INCLUDE_DIRS "."
+                                    "${crypto_dir}/test_vectors"
                                     "${crypto_dir}/include"
                        PRIV_REQUIRES unity
                                      mbedtls
