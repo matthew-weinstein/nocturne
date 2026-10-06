@@ -46,3 +46,8 @@ jobs:
           . "$IDF_PATH/export.sh"
           idf.py -B build-test -D SDKCONFIG=build-test/sdkconfig \
             -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.system_test" build
+      - name: Build the on-target test app
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          idf.py -C test_app build
