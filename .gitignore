@@ -41,6 +41,7 @@ sdkconfig
 # For modern ESP-IDF component manager
 managed_components/
 components/*/host_test/dependencies.lock
+test_app/dependencies.lock
 # If ESP-IDF tools are installed/referenced locally to the project
 .espressif/
 
