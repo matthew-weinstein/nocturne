@@ -14,3 +14,6 @@ idf_component_register(SRCS "test_main.c"
                                      mbedtls
                                      esp_hw_support
                                      esp_timer)
+
+idf_component_get_property(mbedtls_lib mbedtls COMPONENT_LIB)
+target_link_libraries(tfpsacrypto INTERFACE ${mbedtls_lib} mbedtls)
