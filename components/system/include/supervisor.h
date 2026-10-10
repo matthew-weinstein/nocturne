@@ -24,6 +24,8 @@ typedef enum {
     SUPERVISOR_EVENT_COUNT,
 } supervisor_event_t;
 
-esp_err_t supervisor_init(void);
+typedef void (*supervisor_handler_t)(supervisor_state_t entered, supervisor_event_t event);
+
+esp_err_t supervisor_init(supervisor_handler_t on_transition);
 esp_err_t supervisor_post(supervisor_event_t event);
 supervisor_state_t supervisor_state(void);

@@ -37,6 +37,7 @@ static const char *const event_names[] = {
 };
 
 static QueueHandle_t events;
+static supervisor_handler_t transitioned;
 static volatile supervisor_state_t state = SUPERVISOR_STATE_BOOT;
 
 static void handle_in_place(supervisor_state_t current, supervisor_event_t event) {
@@ -80,13 +81,19 @@ static void supervisor_task(void *arg) {
                 ESP_LOGW(TAG, "led update for %s failed: %s", state_names[next], esp_err_to_name(err));
             }
         }
+
+        if (transitioned != NULL) {
+            transitioned(next, event);
+        }
     }
 }
 
-esp_err_t supervisor_init(void) {
+esp_err_t supervisor_init(supervisor_handler_t on_transition) {
     if (events != NULL) {
         return ESP_ERR_INVALID_STATE;
     }
+
+    transitioned = on_transition;
 
     events = xQueueCreate(QUEUE_LENGTH, sizeof(supervisor_event_t));
     if (events == NULL) {
