@@ -1,13 +1,13 @@
 menu "Nocturne"
 
-    config NOCTURNE_SELF_TEST
-        bool "Run self-tests after a short capture"
+    config NOCTURNE_SYSTEM_CHECK
+        bool "Check the recorded session after a short capture"
         default n
 
-    config NOCTURNE_TEST_CAPTURE_SECONDS
-        int "Self-test capture length (seconds)"
+    config NOCTURNE_SYSTEM_CHECK_CAPTURE_SECONDS
+        int "System-check capture length (seconds)"
         default 35
-        depends on NOCTURNE_SELF_TEST
+        depends on NOCTURNE_SYSTEM_CHECK
         range 5 600
 
 endmenu

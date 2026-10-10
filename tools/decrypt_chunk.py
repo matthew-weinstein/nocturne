@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Decrypt one Nocturne chunk record and check the round trip (design doc 4.2).
 
-The device self-test seals a known chunk, writes it to /sdcard/test_chunk.bin
-and prints it as hex between two markers. Feed either one to this script:
+The on-target crypto test seals a known chunk on the AES accelerator and
+prints it as hex between two markers; `pytest test_app` feeds that record to
+this module. To check one by hand, pass the serial log or a raw record file:
 
-    python tools/decrypt_chunk.py test_chunk.bin
     python tools/decrypt_chunk.py serial.log --hex
+    python tools/decrypt_chunk.py chunk.bin
 
 It derives the key exactly as the device does, decrypts with the chunk's AAD,
-compares the plaintext against the pattern the self-test sealed, and confirms
+compares the plaintext against the pattern the test sealed, and confirms
 that the wrong segment or chunk index fails the tag.
 """
 
@@ -86,7 +87,7 @@ def open_chunk(key, segment_index, chunk_index, data):
 
 
 def build_test_chunk():
-    """The plaintext main/test/self_test.c seals: 50 length-prefixed frames."""
+    """The plaintext the on-target chunk test seals: 50 length-prefixed frames."""
     out = bytearray()
 
     for frame in range(TEST_CHUNK_FRAMES):
@@ -124,7 +125,7 @@ def main():
     parser.add_argument("--passphrase", default=TEST_PASSPHRASE, help="passphrase to derive the key from")
     parser.add_argument("--salt-mac", default=TEST_SALT_MAC, help="6-byte device MAC in hex, the start of the salt")
     parser.add_argument("--out", help="write the plaintext here")
-    parser.add_argument("--no-check", action="store_true", help="skip the comparison against the self-test plaintext")
+    parser.add_argument("--no-check", action="store_true", help="skip the comparison against the test plaintext")
     parser.add_argument("--show-key", action="store_true", help="print the whole key, not just a fingerprint")
     args = parser.parse_args()
 
@@ -152,9 +153,9 @@ def main():
     if not args.no_check:
         expected = build_test_chunk()
         if plaintext == expected:
-            print(f"round trip: byte-identical to the {len(expected)}-byte self-test chunk")
+            print(f"round trip: byte-identical to the {len(expected)}-byte test chunk")
         else:
-            failures.append(f"plaintext does not match the self-test chunk ({len(plaintext)} bytes decrypted, {len(expected)} expected)")
+            failures.append(f"plaintext does not match the test chunk ({len(plaintext)} bytes decrypted, {len(expected)} expected)")
 
     for label, segment_index, chunk_index in (
         ("segment", args.segment + 1, args.chunk),
