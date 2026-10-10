@@ -65,7 +65,7 @@ def test_parse_record_rejects_short_empty_and_torn_records(kat_key):
         parse_record(missing_last_byte)
 
 def test_read_hex_takes_only_the_lines_between_markers():
-    log = f"""I (123) selftest: chunk: sealing
+    log = f"""I (123) crypto_test: sealing
 deadbeef
 {HEX_BEGIN}
 00112233

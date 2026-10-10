@@ -1,7 +1,6 @@
 idf_component_register(SRCS "main.c"
-                            "test/self_test.c"
+                            "system_check.c"
                        INCLUDE_DIRS "."
-                                    "test"
                        REQUIRES audio
                                 crypto
                                 storage

@@ -22,7 +22,7 @@
 #include "ring_buffer.h"
 #include "session.h"
 #include "sdkconfig.h"
-#include "self_test.h"
+#include "system_check.h"
 #include "key_manager.h"
 #include "led.h"
 #include "button.h"
@@ -30,8 +30,8 @@
 
 #define RING_CAPACITY_SAMPLES (AUDIO_FORMAT_SAMPLE_RATE_HZ * 10)  // 10 seconds
 
-#if CONFIG_NOCTURNE_SELF_TEST
-#define CAPTURE_SECONDS CONFIG_NOCTURNE_TEST_CAPTURE_SECONDS
+#if CONFIG_NOCTURNE_SYSTEM_CHECK
+#define CAPTURE_SECONDS CONFIG_NOCTURNE_SYSTEM_CHECK_CAPTURE_SECONDS
 #else
 #define CAPTURE_SECONDS 300 /* 5 minutes */
 #endif
@@ -228,9 +228,6 @@ void app_main(void)
         return;
     }
 
-    #if CONFIG_NOCTURNE_SELF_TEST
-        self_test_supervisor();
-    #endif
     supervisor_post(SUPERVISOR_EVENT_BOOT_DONE);
 
     ESP_ERROR_CHECK(i2s_microphone_init());
@@ -274,8 +271,8 @@ void app_main(void)
 
     ESP_ERROR_CHECK(session_finish());
     
-    #if CONFIG_NOCTURNE_SELF_TEST
-        self_test_run_all();
+    #if CONFIG_NOCTURNE_SYSTEM_CHECK
+        system_check_session();
     #endif
 
     ring_buffer_deinit();
