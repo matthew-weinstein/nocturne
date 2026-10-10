@@ -31,7 +31,7 @@ static const supervisor_step_t walk[] = {
 
 TEST_CASE("the live supervisor drives the LED through every transition (watch it)", "[system][manual]") {
     TEST_ASSERT_EQUAL(ESP_OK, led_init());
-    TEST_ASSERT_EQUAL(ESP_OK, supervisor_init());
+    TEST_ASSERT_EQUAL(ESP_OK, supervisor_init(NULL));
     TEST_ASSERT_EQUAL(SUPERVISOR_STATE_BOOT, supervisor_state());
 
     size_t num_steps = sizeof(walk) / sizeof(walk[0]);

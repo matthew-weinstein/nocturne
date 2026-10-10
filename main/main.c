@@ -12,15 +12,8 @@
 #include "esp_ota_ops.h"
 #include "esp_app_desc.h"
 #include "esp_crt_bundle.h"
-#include <inttypes.h>
-#include <stdio.h>
-#include "audio_format.h"
-#include "i2s_microphone.h"
-#include "pcm_convert.h"
 #include "sd_card.h"
-#include "audio_encoder.h"
-#include "ring_buffer.h"
-#include "session.h"
+#include "recorder.h"
 #include "sdkconfig.h"
 #include "system_check.h"
 #include "key_manager.h"
@@ -28,22 +21,8 @@
 #include "button.h"
 #include "supervisor.h"
 
-#define RING_CAPACITY_SAMPLES (AUDIO_FORMAT_SAMPLE_RATE_HZ * 10)  // 10 seconds
-
-#if CONFIG_NOCTURNE_SYSTEM_CHECK
-#define CAPTURE_SECONDS CONFIG_NOCTURNE_SYSTEM_CHECK_CAPTURE_SECONDS
-#else
-#define CAPTURE_SECONDS 300 /* 5 minutes */
-#endif
-
-static int16_t frame[AUDIO_FORMAT_FRAME_SAMPLES];
-
-#define BLOCK_SIZE_SAMPLES 512
-
-static int16_t pcm[BLOCK_SIZE_SAMPLES];
-static int32_t samples[BLOCK_SIZE_SAMPLES];
-
-static uint8_t packet[AUDIO_FORMAT_MAX_PACKET_BYTES];
+#define KEY_READY_TIMEOUT_MS 30000
+#define STATE_POLL_MS        100
 
 static const char *TAG = "nocturne";
 static EventGroupHandle_t s_wifi_events;
@@ -189,6 +168,44 @@ static void on_button(button_event_t event) {
     supervisor_post(events[event]);
 }
 
+static void on_transition(supervisor_state_t entered, supervisor_event_t event) {
+    (void)event;
+
+    if (entered == SUPERVISOR_STATE_RECORDING) {
+        esp_err_t err = recorder_start();
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "recording did not start: %s", esp_err_to_name(err));
+        }
+    } else if (entered == SUPERVISOR_STATE_FINALIZING) {
+        esp_err_t err = recorder_stop();
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "recording did not stop: %s", esp_err_to_name(err));
+            supervisor_post(SUPERVISOR_EVENT_FINALIZE_FAILED);
+        }
+    }
+}
+
+static void on_recording_finished(esp_err_t result) {
+    supervisor_post(result == ESP_OK ? SUPERVISOR_EVENT_FINALIZE_OK : SUPERVISOR_EVENT_FINALIZE_FAILED);
+}
+
+#if CONFIG_NOCTURNE_SYSTEM_CHECK
+static void run_system_check(void) {
+    ESP_ERROR_CHECK(key_manager_wait_ready(KEY_READY_TIMEOUT_MS));
+
+    supervisor_post(SUPERVISOR_EVENT_SHORT_PRESS);
+    vTaskDelay(pdMS_TO_TICKS(CONFIG_NOCTURNE_SYSTEM_CHECK_CAPTURE_SECONDS * 1000));
+    supervisor_post(SUPERVISOR_EVENT_LONG_PRESS);
+
+    vTaskDelay(pdMS_TO_TICKS(STATE_POLL_MS));
+    while (supervisor_state() != SUPERVISOR_STATE_IDLE) {
+        vTaskDelay(pdMS_TO_TICKS(STATE_POLL_MS));
+    }
+
+    system_check_session();
+}
+#endif
+
 void app_main(void)
 {
     esp_err_t ret = nvs_flash_init();
@@ -202,7 +219,7 @@ void app_main(void)
 
     ESP_ERROR_CHECK(key_manager_init(NOCTURNE_PASSPHRASE));
     ESP_ERROR_CHECK(led_init());
-    ESP_ERROR_CHECK(supervisor_init());
+    ESP_ERROR_CHECK(supervisor_init(on_transition));
     ESP_ERROR_CHECK(button_init(on_button));
 
     const esp_app_desc_t *app_desc = esp_app_get_description();
@@ -228,57 +245,10 @@ void app_main(void)
         return;
     }
 
+    ESP_ERROR_CHECK(recorder_init(on_recording_finished));
     supervisor_post(SUPERVISOR_EVENT_BOOT_DONE);
 
-    ESP_ERROR_CHECK(i2s_microphone_init());
-    ESP_ERROR_CHECK(audio_encoder_init());
-    ESP_ERROR_CHECK(ring_buffer_init(RING_CAPACITY_SAMPLES));
-    ESP_ERROR_CHECK(session_start());
-
-    const uint32_t target_samples = AUDIO_FORMAT_SAMPLE_RATE_HZ * CAPTURE_SECONDS;
-    uint32_t captured = 0;
-    size_t max_occupancy = 0;
-    size_t overflow_count = 0;
-
-    while (captured < target_samples) {
-        size_t num_samples = 0;
-
-        if (i2s_microphone_read(samples, BLOCK_SIZE_SAMPLES, &num_samples) != ESP_OK) {
-            continue;
-        }
-
-        pcm_convert_from_i2s(samples, pcm, num_samples);
-
-        if (ring_buffer_write(pcm, num_samples) != ESP_OK) {
-            overflow_count++;
-        }
-
-        captured += num_samples;
-
-        size_t occupancy = ring_buffer_available();
-        if (occupancy > max_occupancy) {
-            max_occupancy = occupancy;
-        }
-
-        while (ring_buffer_available() >= AUDIO_FORMAT_FRAME_SAMPLES) {
-            ESP_ERROR_CHECK(ring_buffer_read(frame, AUDIO_FORMAT_FRAME_SAMPLES));
-
-            size_t num_bytes = 0;
-            ESP_ERROR_CHECK(audio_encoder_encode_frame(frame, packet, AUDIO_FORMAT_MAX_PACKET_BYTES, &num_bytes));
-            ESP_ERROR_CHECK(session_write_packet(packet, num_bytes));
-        }
-    }
-
-    ESP_ERROR_CHECK(session_finish());
-    
-    #if CONFIG_NOCTURNE_SYSTEM_CHECK
-        system_check_session();
-    #endif
-
-    ring_buffer_deinit();
-    ESP_ERROR_CHECK(audio_encoder_deinit());
-    ESP_ERROR_CHECK(sd_card_unmount());
-
-    printf("captured %" PRIu32 " samples, peak occupancy %u, overflows %u\n",
-        captured, (unsigned)max_occupancy, (unsigned)overflow_count);
+#if CONFIG_NOCTURNE_SYSTEM_CHECK
+    run_system_check();
+#endif
 }

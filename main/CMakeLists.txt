@@ -6,6 +6,7 @@ idf_component_register(SRCS "main.c"
                                 storage
                                 hmi
                                 system
+                                recorder
                                 esp_wifi
                                 esp_netif
                                 esp_event

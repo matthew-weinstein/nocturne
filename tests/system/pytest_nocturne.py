@@ -4,11 +4,18 @@ import pytest
 from pytest_embedded import Dut
 
 BOOT_TIMEOUT_S = 60
+CAPTURE_TIMEOUT_S = 60
 CHECK_TIMEOUT_S = 120
 
 BOOT_DONE = "BOOT -> IDLE (boot done)"
+RECORDING_STARTED = "IDLE -> RECORDING (short press)"
+RECORDING_STOPPED = "RECORDING -> FINALIZING (long press)"
+FINALIZED = "FINALIZING -> IDLE (finalize ok)"
 FAULT = "BOOT -> FAULT (fault)"
-EXPECTED_SEGMENT_FRAMES = [500, 500, 500, 250]
+
+FULL_SEGMENT_FRAMES = 500
+EXPECTED_FRAMES = 1750
+FRAME_TOLERANCE = 50
 
 CHECK_LINE = re.compile(rb"NCT_CHECK ([^\r\n]+)")
 CAPTURE_SUMMARY = re.compile(rb"peak occupancy (\d+), overflows (\d+)")
@@ -25,6 +32,16 @@ def read_check(dut):
 
 def test_capture_session(dut: Dut):
     dut.expect_exact(BOOT_DONE, timeout=BOOT_TIMEOUT_S)
+    dut.expect_exact(RECORDING_STARTED, timeout=BOOT_TIMEOUT_S)
+    dut.expect_exact(RECORDING_STOPPED, timeout=CAPTURE_TIMEOUT_S)
+
+    summary = dut.expect(CAPTURE_SUMMARY, timeout=CHECK_TIMEOUT_S)
+    peak_occupancy = int(summary.group(1))
+    overflows = int(summary.group(2))
+    print(f"peak occupancy {peak_occupancy} samples")
+    assert overflows == 0
+
+    dut.expect_exact(FINALIZED, timeout=CHECK_TIMEOUT_S)
 
     segment_frames = []
     fields = read_check(dut)
@@ -34,13 +51,12 @@ def test_capture_session(dut: Dut):
         fields = read_check(dut)
 
     assert fields["result"] == "PASS"
-    assert segment_frames == EXPECTED_SEGMENT_FRAMES
 
-    summary = dut.expect(CAPTURE_SUMMARY, timeout=CHECK_TIMEOUT_S)
-    peak_occupancy = int(summary.group(1))
-    overflows = int(summary.group(2))
-    print(f"peak occupancy {peak_occupancy} samples")
-    assert overflows == 0
+    print(f"segment frames {segment_frames}")
+    for frames in segment_frames[:-1]:
+        assert frames == FULL_SEGMENT_FRAMES
+    assert 0 < segment_frames[-1] <= FULL_SEGMENT_FRAMES
+    assert abs(sum(segment_frames) - EXPECTED_FRAMES) <= FRAME_TOLERANCE
 
 @pytest.mark.manual_setup
 def test_fault_without_card(dut: Dut):
