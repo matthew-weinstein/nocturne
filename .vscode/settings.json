@@ -30,6 +30,6 @@
     "--query-driver=**",
     "--compile-commands-dir=c:\\Users\\matth\\GitHub\\nocturne\\build"
   ],
-  "idf.flashType": "JTAG",
+  "idf.flashType": "UART",
   "idf.port": "COM3"
 }
