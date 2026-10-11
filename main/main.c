@@ -20,6 +20,7 @@
 #include "supervisor.h"
 #include "health.h"
 #include "wifi.h"
+#include "sntp_time.h"
 
 #define STATE_POLL_MS        100
 #define OTA_WIFI_TIMEOUT_MS  30000
@@ -193,6 +194,7 @@ void app_main(void)
     ESP_LOGI(TAG, "running version: %s", app_desc->version);
 
     ESP_ERROR_CHECK(wifi_init(WIFI_SSID, WIFI_PASS));
+    ESP_ERROR_CHECK(sntp_time_init());
 
     const esp_partition_t *running = esp_ota_get_running_partition();
     esp_ota_img_states_t state;
