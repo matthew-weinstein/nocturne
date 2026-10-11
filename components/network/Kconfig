@@ -1,0 +1,14 @@
+menu "Nocturne network"
+
+    config NOCTURNE_SNTP_SERVER
+        string "SNTP server"
+        default "pool.ntp.org"
+
+    config NOCTURNE_TIMEZONE
+        string "Timezone (POSIX TZ string)"
+        default "UTC0"
+        help
+            Session IDs use local time in this zone, e.g. "GMT0BST,M3.5.0/1,M10.5.0"
+            for the UK or "EST5EDT,M3.2.0,M11.1.0" for US Eastern.
+
+endmenu
