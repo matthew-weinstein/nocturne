@@ -1,3 +1,4 @@
+#include <inttypes.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -20,6 +21,7 @@
 #include "led.h"
 #include "button.h"
 #include "supervisor.h"
+#include "health.h"
 
 #define KEY_READY_TIMEOUT_MS 30000
 #define STATE_POLL_MS        100
@@ -185,6 +187,26 @@ static void on_transition(supervisor_state_t entered, supervisor_event_t event) 
     }
 }
 
+static bool check_health(void) {
+    recorder_stats_t stats;
+    recorder_get_stats(&stats);
+
+    health_inputs_t inputs = {
+        .recorder_failed = stats.failed,
+        .overflow_count = stats.overflow_count,
+        .silent_ms = stats.silent_ms,
+    };
+    inputs.sd_mounted = sd_card_free_pct(&inputs.free_space_pct) == ESP_OK;
+
+    uint32_t problems = health_evaluate(&inputs);
+    ESP_LOGI(TAG, "health: sd %s, free %" PRIu32 "%%, recorder %s, overflows %" PRIu32
+             ", silent %" PRIu32 " ms, problems 0x%02" PRIx32,
+             inputs.sd_mounted ? "ok" : "missing", inputs.free_space_pct,
+             inputs.recorder_failed ? "failed" : "ok", inputs.overflow_count,
+             inputs.silent_ms, problems);
+    return problems == 0;
+}
+
 static void on_recording_finished(esp_err_t result) {
     supervisor_post(result == ESP_OK ? SUPERVISOR_EVENT_FINALIZE_OK : SUPERVISOR_EVENT_FINALIZE_FAILED);
 }
@@ -193,8 +215,12 @@ static void on_recording_finished(esp_err_t result) {
 static void run_system_check(void) {
     ESP_ERROR_CHECK(key_manager_wait_ready(KEY_READY_TIMEOUT_MS));
 
+    uint32_t capture_ms = CONFIG_NOCTURNE_SYSTEM_CHECK_CAPTURE_SECONDS * 1000;
+
     supervisor_post(SUPERVISOR_EVENT_SHORT_PRESS);
-    vTaskDelay(pdMS_TO_TICKS(CONFIG_NOCTURNE_SYSTEM_CHECK_CAPTURE_SECONDS * 1000));
+    vTaskDelay(pdMS_TO_TICKS(capture_ms / 2));
+    supervisor_post(SUPERVISOR_EVENT_SHORT_PRESS);
+    vTaskDelay(pdMS_TO_TICKS(capture_ms - capture_ms / 2));
     supervisor_post(SUPERVISOR_EVENT_LONG_PRESS);
 
     vTaskDelay(pdMS_TO_TICKS(STATE_POLL_MS));
@@ -219,7 +245,7 @@ void app_main(void)
 
     ESP_ERROR_CHECK(key_manager_init(NOCTURNE_PASSPHRASE));
     ESP_ERROR_CHECK(led_init());
-    ESP_ERROR_CHECK(supervisor_init(on_transition));
+    ESP_ERROR_CHECK(supervisor_init(on_transition, check_health));
     ESP_ERROR_CHECK(button_init(on_button));
 
     const esp_app_desc_t *app_desc = esp_app_get_description();

@@ -51,6 +51,9 @@ esp_err_t sd_card_mount(void) {
     }
 
     sdmmc_card_print_info(stdout, card);
+
+    uint32_t free_pct;
+    (void)sd_card_free_pct(&free_pct);
     return ESP_OK;
 }
 
@@ -62,4 +65,23 @@ esp_err_t sd_card_unmount(void) {
 
     spi_bus_free(SD_SPI_HOST);
     return status;
+}
+
+esp_err_t sd_card_free_pct(uint32_t *out_pct) {
+    if (card == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    uint64_t total_bytes = 0;
+    uint64_t free_bytes = 0;
+    esp_err_t status = esp_vfs_fat_info(SD_CARD_MOUNT_POINT, &total_bytes, &free_bytes);
+    if (status != ESP_OK) {
+        return status;
+    }
+    if (total_bytes == 0) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    *out_pct = (uint32_t)(free_bytes * 100 / total_bytes);
+    return ESP_OK;
 }

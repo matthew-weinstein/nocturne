@@ -7,6 +7,7 @@
 #include "audio_encoder.h"
 #include "audio_format.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "i2s_microphone.h"
@@ -33,6 +34,45 @@ static recorder_handler_t finished;
 static volatile bool recording;
 static volatile bool stop_requested;
 
+static portMUX_TYPE stats_lock = portMUX_INITIALIZER_UNLOCKED;
+static bool failed;
+static uint32_t overflow_count;
+static int64_t last_sound_us;
+
+static bool has_sound(const int16_t *block, size_t num_samples) {
+    for (size_t i = 0; i < num_samples; i++) {
+        if (block[i] != 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void record_block(bool overflowed, bool heard) {
+    taskENTER_CRITICAL(&stats_lock);
+    if (overflowed) {
+        overflow_count++;
+    }
+    if (heard) {
+        last_sound_us = esp_timer_get_time();
+    }
+    taskEXIT_CRITICAL(&stats_lock);
+}
+
+static void reset_stats(void) {
+    taskENTER_CRITICAL(&stats_lock);
+    failed = false;
+    overflow_count = 0;
+    last_sound_us = esp_timer_get_time();
+    taskEXIT_CRITICAL(&stats_lock);
+}
+
+static void mark_failed(void) {
+    taskENTER_CRITICAL(&stats_lock);
+    failed = true;
+    taskEXIT_CRITICAL(&stats_lock);
+}
+
 static esp_err_t encode_available(void) {
     while (ring_buffer_available() >= AUDIO_FORMAT_FRAME_SAMPLES) {
         esp_err_t status = ring_buffer_read(frame, AUDIO_FORMAT_FRAME_SAMPLES);
@@ -57,7 +97,7 @@ static esp_err_t encode_available(void) {
 static esp_err_t capture(void) {
     uint32_t captured = 0;
     size_t max_occupancy = 0;
-    size_t overflow_count = 0;
+    uint32_t num_overflows = 0;
     esp_err_t status = ESP_OK;
 
     while (!stop_requested && status == ESP_OK) {
@@ -68,9 +108,11 @@ static esp_err_t capture(void) {
 
         pcm_convert_from_i2s(samples, pcm, num_samples);
 
-        if (ring_buffer_write(pcm, num_samples) != ESP_OK) {
-            overflow_count++;
+        bool overflowed = ring_buffer_write(pcm, num_samples) != ESP_OK;
+        if (overflowed) {
+            num_overflows++;
         }
+        record_block(overflowed, has_sound(pcm, num_samples));
         captured += num_samples;
 
         size_t occupancy = ring_buffer_available();
@@ -82,7 +124,7 @@ static esp_err_t capture(void) {
     }
 
     ESP_LOGI(TAG, "captured %" PRIu32 " samples, peak occupancy %u, overflows %u",
-             captured, (unsigned)max_occupancy, (unsigned)overflow_count);
+             captured, (unsigned)max_occupancy, (unsigned)num_overflows);
     return status;
 }
 
@@ -120,6 +162,7 @@ static void recorder_task(void *arg) {
         esp_err_t result = record_session();
         if (result != ESP_OK) {
             ESP_LOGE(TAG, "recording failed: %s", esp_err_to_name(result));
+            mark_failed();
         }
 
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -157,6 +200,7 @@ esp_err_t recorder_start(void) {
         return ESP_ERR_INVALID_STATE;
     }
 
+    reset_stats();
     stop_requested = false;
     recording = true;
     xTaskNotifyGive(task);
@@ -171,4 +215,12 @@ esp_err_t recorder_stop(void) {
     stop_requested = true;
     xTaskNotifyGive(task);
     return ESP_OK;
+}
+
+void recorder_get_stats(recorder_stats_t *out_stats) {
+    taskENTER_CRITICAL(&stats_lock);
+    out_stats->failed = failed;
+    out_stats->overflow_count = overflow_count;
+    out_stats->silent_ms = (uint32_t)((esp_timer_get_time() - last_sound_us) / 1000);
+    taskEXIT_CRITICAL(&stats_lock);
 }

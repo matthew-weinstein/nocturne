@@ -38,12 +38,34 @@ static const char *const event_names[] = {
 
 static QueueHandle_t events;
 static supervisor_handler_t transitioned;
+static supervisor_health_check_t health_check;
 static volatile supervisor_state_t state = SUPERVISOR_STATE_BOOT;
+
+static void show(const led_pattern_t *pattern, const char *what) {
+    esp_err_t err = led_start(pattern);
+
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "led update for %s failed: %s", what, esp_err_to_name(err));
+    }
+}
+
+static void run_health_check(void) {
+    if (health_check == NULL) {
+        ESP_LOGW(TAG, "health check requested, but none registered");
+        return;
+    }
+
+    bool healthy = health_check();
+    ESP_LOGI(TAG, "health check %s", healthy ? "ok" : "failed");
+
+    led_pattern_t pattern = supervisor_logic_led_for_health(healthy);
+    show(&pattern, "health check");
+}
 
 static void handle_in_place(supervisor_state_t current, supervisor_event_t event) {
     switch (supervisor_logic_action_for(current, event)) {
     case SUPERVISOR_LOGIC_ACTION_HEALTH_CHECK:
-        ESP_LOGI(TAG, "health check requested");
+        run_health_check();
         break;
     case SUPERVISOR_LOGIC_ACTION_FACTORY_RESET:
         ESP_LOGW(TAG, "factory reset requested");
@@ -75,11 +97,7 @@ static void supervisor_task(void *arg) {
 
         led_pattern_t pattern;
         if (supervisor_logic_led_for(next, event, &pattern)) {
-            esp_err_t err = led_start(&pattern);
-
-            if (err != ESP_OK) {
-                ESP_LOGW(TAG, "led update for %s failed: %s", state_names[next], esp_err_to_name(err));
-            }
+            show(&pattern, state_names[next]);
         }
 
         if (transitioned != NULL) {
@@ -88,12 +106,13 @@ static void supervisor_task(void *arg) {
     }
 }
 
-esp_err_t supervisor_init(supervisor_handler_t on_transition) {
+esp_err_t supervisor_init(supervisor_handler_t on_transition, supervisor_health_check_t check_health) {
     if (events != NULL) {
         return ESP_ERR_INVALID_STATE;
     }
 
     transitioned = on_transition;
+    health_check = check_health;
 
     events = xQueueCreate(QUEUE_LENGTH, sizeof(supervisor_event_t));
     if (events == NULL) {

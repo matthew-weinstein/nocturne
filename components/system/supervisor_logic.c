@@ -80,3 +80,8 @@ bool supervisor_logic_led_for(supervisor_state_t entered, supervisor_event_t eve
     }
     return false;
 }
+
+led_pattern_t supervisor_logic_led_for_health(bool healthy) {
+    led_color_t color = healthy ? LED_COLOR_GREEN : LED_COLOR_RED;
+    return (led_pattern_t){ color, LED_FLASH_MS, 0 };
+}

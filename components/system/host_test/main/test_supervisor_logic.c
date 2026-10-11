@@ -86,10 +86,23 @@ static void test_boot_and_resuming_leave_the_led_alone(void) {
     TEST_ASSERT_FALSE(supervisor_logic_led_for(SUPERVISOR_STATE_RESUMING, SUPERVISOR_EVENT_RESUME_FOUND, &pattern));
 }
 
+static void test_led_for_health(void) {
+    led_pattern_t pattern = supervisor_logic_led_for_health(true);
+    TEST_ASSERT_EQUAL_INT(LED_COLOR_GREEN, pattern.color);
+    TEST_ASSERT_EQUAL_UINT32(LED_FLASH_MS, pattern.on_ms);
+    TEST_ASSERT_EQUAL_UINT32(0, pattern.off_ms);
+
+    pattern = supervisor_logic_led_for_health(false);
+    TEST_ASSERT_EQUAL_INT(LED_COLOR_RED, pattern.color);
+    TEST_ASSERT_EQUAL_UINT32(LED_FLASH_MS, pattern.on_ms);
+    TEST_ASSERT_EQUAL_UINT32(0, pattern.off_ms);
+}
+
 void run_supervisor_logic_tests(void) {
     UnitySetTestFile(__FILE__);
     RUN_TEST(test_every_state_event_pair_matches_the_table);
     RUN_TEST(test_in_place_actions);
     RUN_TEST(test_led_for_each_state_entered);
     RUN_TEST(test_boot_and_resuming_leave_the_led_alone);
+    RUN_TEST(test_led_for_health);
 }

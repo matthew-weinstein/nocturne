@@ -4,6 +4,7 @@
 
 void app_main(void) {
     UNITY_BEGIN();
+    run_health_tests();
     run_supervisor_logic_tests();
     exit(UNITY_END());
 }
