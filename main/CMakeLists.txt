@@ -7,9 +7,7 @@ idf_component_register(SRCS "main.c"
                                 hmi
                                 system
                                 recorder
-                                esp_wifi
-                                esp_netif
-                                esp_event
+                                network
                                 nvs_flash
                                 esp_https_ota
                                 esp_http_client
