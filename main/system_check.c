@@ -19,7 +19,6 @@
 #define PATH_LEN             128
 #define FILENAME_LEN         32
 #define LENGTH_FIELD_BYTES   4
-#define KEY_READY_TIMEOUT_MS 30000
 
 static uint8_t record[SEGMENT_FORMAT_MAX_CHUNK_RECORD_BYTES];
 static uint8_t plaintext[SEGMENT_FORMAT_MAX_CHUNK_PLAINTEXT_BYTES];
@@ -191,7 +190,7 @@ static esp_err_t check_session(void) {
         return ESP_FAIL;
     }
 
-    if (key_manager_wait_ready(KEY_READY_TIMEOUT_MS) != ESP_OK) {
+    if (key_manager_wait_ready() != ESP_OK) {
         ESP_LOGE(TAG, "key not ready");
         return ESP_FAIL;
     }

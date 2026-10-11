@@ -26,8 +26,6 @@
 #define SESSION_DIR_LEN 64
 #define PATH_LEN        128
 
-#define KEY_WAIT_TIMEOUT_MS 30000
-
 static manifest_t manifest;
 static char session_dir[SESSION_DIR_LEN];
 static char manifest_path[PATH_LEN];
@@ -125,7 +123,7 @@ static esp_err_t close_segment(void) {
 }
 
 esp_err_t session_start(void) {
-    esp_err_t key_status = key_manager_wait_ready(KEY_WAIT_TIMEOUT_MS);
+    esp_err_t key_status = key_manager_wait_ready();
     if (key_status != ESP_OK) {
         return key_status;
     }
@@ -163,7 +161,7 @@ esp_err_t session_start(void) {
 }
 
 esp_err_t session_resume(const char *existing_session_dir) {
-    esp_err_t key_status = key_manager_wait_ready(KEY_WAIT_TIMEOUT_MS);
+    esp_err_t key_status = key_manager_wait_ready();
     if (key_status != ESP_OK) {
         return key_status;
     }

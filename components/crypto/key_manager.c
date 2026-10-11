@@ -131,18 +131,14 @@ esp_err_t key_manager_init(const char *passphrase) {
     return ESP_OK;
 }
 
-esp_err_t key_manager_wait_ready(uint32_t timeout_ms) {
+esp_err_t key_manager_wait_ready(void) {
     if (!derivation_started) {
         return ESP_ERR_INVALID_STATE;
     }
 
     EventBits_t bits = xEventGroupWaitBits(key_events, KEY_READY_BIT | KEY_FAILED_BIT,
-                                           pdFALSE, pdFALSE, pdMS_TO_TICKS(timeout_ms));
-    if (bits & KEY_READY_BIT) { 
-        return ESP_OK;
-    }
-
-    return (bits & KEY_FAILED_BIT) ? ESP_FAIL : ESP_ERR_TIMEOUT;
+                                           pdFALSE, pdFALSE, portMAX_DELAY);
+    return (bits & KEY_READY_BIT) ? ESP_OK : ESP_FAIL;
 }
 
 const uint8_t *key_manager_key(void) {
