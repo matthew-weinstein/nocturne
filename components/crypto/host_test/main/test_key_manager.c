@@ -4,8 +4,6 @@
 #include "tests.h"
 #include "unity.h"
 
-#define KEY_WAIT_MS 30000
-
 static const uint8_t stub_device_key[KEY_MANAGER_KEY_BYTES] = {
     0x7c, 0x1e, 0x47, 0x93, 0x86, 0x06, 0xa8, 0x46, 0x48, 0x95, 0x06, 0xff, 0x20, 0xe1, 0xea, 0x7c,
     0x5b, 0xc9, 0x7b, 0x62, 0xb8, 0xc6, 0x50, 0x0b, 0xd1, 0x68, 0xc1, 0xcf, 0x9e, 0x0b, 0xeb, 0xd7
@@ -33,13 +31,13 @@ static void test_derive_rejects_bad_arguments(void) {
 
 static void test_device_key_is_unavailable_before_init(void) {
     TEST_ASSERT_NULL(key_manager_key());
-    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, key_manager_wait_ready(0));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, key_manager_wait_ready());
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, key_manager_init(NULL));
 }
 
 static void test_init_derives_the_device_key_in_the_background(void) {
     TEST_ASSERT_EQUAL(ESP_OK, key_manager_init(KAT_PASSPHRASE));
-    TEST_ASSERT_EQUAL(ESP_OK, key_manager_wait_ready(KEY_WAIT_MS));
+    TEST_ASSERT_EQUAL(ESP_OK, key_manager_wait_ready());
 
     const uint8_t *key = key_manager_key();
     TEST_ASSERT_NOT_NULL(key);

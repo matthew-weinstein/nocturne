@@ -6,7 +6,6 @@
 #include "key_manager.h"
 #include "unity.h"
 
-#define KEY_WAIT_MS       30000
 #define MAC_BYTES         6
 #define SALT_SUFFIX       "nocturne"
 #define SALT_SUFFIX_BYTES (sizeof(SALT_SUFFIX) - 1)
@@ -35,7 +34,7 @@ TEST_CASE("the device key is salted with this chip's MAC", "[crypto]") {
     TEST_ASSERT_EQUAL_UINT8_ARRAY(SALT_SUFFIX, salt + MAC_BYTES, SALT_SUFFIX_BYTES);
 
     TEST_ASSERT_EQUAL(ESP_OK, key_manager_init(KAT_PASSPHRASE));
-    TEST_ASSERT_EQUAL(ESP_OK, key_manager_wait_ready(KEY_WAIT_MS));
+    TEST_ASSERT_EQUAL(ESP_OK, key_manager_wait_ready());
     TEST_ASSERT_NOT_NULL(key_manager_key());
 
     uint8_t expected[KEY_MANAGER_KEY_BYTES];

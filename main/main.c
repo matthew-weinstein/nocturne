@@ -21,7 +21,6 @@
 #include "health.h"
 #include "wifi.h"
 
-#define KEY_READY_TIMEOUT_MS 30000
 #define STATE_POLL_MS        100
 #define OTA_WIFI_TIMEOUT_MS  30000
 
@@ -155,7 +154,7 @@ static void on_recording_finished(esp_err_t result) {
 
 #if CONFIG_NOCTURNE_SYSTEM_CHECK
 static void run_system_check(void) {
-    ESP_ERROR_CHECK(key_manager_wait_ready(KEY_READY_TIMEOUT_MS));
+    ESP_ERROR_CHECK(key_manager_wait_ready());
 
     uint32_t capture_ms = CONFIG_NOCTURNE_SYSTEM_CHECK_CAPTURE_SECONDS * 1000;
 
