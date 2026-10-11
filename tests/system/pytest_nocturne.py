@@ -9,6 +9,7 @@ CHECK_TIMEOUT_S = 120
 
 BOOT_DONE = "BOOT -> IDLE (boot done)"
 RECORDING_STARTED = "IDLE -> RECORDING (short press)"
+HEALTH_OK = "health check ok"
 RECORDING_STOPPED = "RECORDING -> FINALIZING (long press)"
 FINALIZED = "FINALIZING -> IDLE (finalize ok)"
 FAULT = "BOOT -> FAULT (fault)"
@@ -33,6 +34,7 @@ def read_check(dut):
 def test_capture_session(dut: Dut):
     dut.expect_exact(BOOT_DONE, timeout=BOOT_TIMEOUT_S)
     dut.expect_exact(RECORDING_STARTED, timeout=BOOT_TIMEOUT_S)
+    dut.expect_exact(HEALTH_OK, timeout=CAPTURE_TIMEOUT_S)
     dut.expect_exact(RECORDING_STOPPED, timeout=CAPTURE_TIMEOUT_S)
 
     summary = dut.expect(CAPTURE_SUMMARY, timeout=CHECK_TIMEOUT_S)

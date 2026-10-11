@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <stddef.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -24,14 +25,21 @@ static const supervisor_step_t walk[] = {
     {SUPERVISOR_EVENT_LONG_PRESS,      SUPERVISOR_STATE_IDLE},
     {SUPERVISOR_EVENT_VERY_LONG_PRESS, SUPERVISOR_STATE_IDLE},
     {SUPERVISOR_EVENT_SHORT_PRESS,     SUPERVISOR_STATE_RECORDING},
+    {SUPERVISOR_EVENT_SHORT_PRESS,     SUPERVISOR_STATE_RECORDING},
     {SUPERVISOR_EVENT_LONG_PRESS,      SUPERVISOR_STATE_FINALIZING},
     {SUPERVISOR_EVENT_FINALIZE_FAILED, SUPERVISOR_STATE_IDLE},
     {SUPERVISOR_EVENT_FAULT,           SUPERVISOR_STATE_FAULT},
 };
 
+static bool alternate_health(void) {
+    static bool healthy;
+    healthy = !healthy;
+    return healthy;
+}
+
 TEST_CASE("the live supervisor drives the LED through every transition (watch it)", "[system][manual]") {
     TEST_ASSERT_EQUAL(ESP_OK, led_init());
-    TEST_ASSERT_EQUAL(ESP_OK, supervisor_init(NULL));
+    TEST_ASSERT_EQUAL(ESP_OK, supervisor_init(NULL, alternate_health));
     TEST_ASSERT_EQUAL(SUPERVISOR_STATE_BOOT, supervisor_state());
 
     size_t num_steps = sizeof(walk) / sizeof(walk[0]);

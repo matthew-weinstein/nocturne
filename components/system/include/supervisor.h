@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include "esp_err.h"
 
 typedef enum {
@@ -25,7 +26,8 @@ typedef enum {
 } supervisor_event_t;
 
 typedef void (*supervisor_handler_t)(supervisor_state_t entered, supervisor_event_t event);
+typedef bool (*supervisor_health_check_t)(void);
 
-esp_err_t supervisor_init(supervisor_handler_t on_transition);
+esp_err_t supervisor_init(supervisor_handler_t on_transition, supervisor_health_check_t check_health);
 esp_err_t supervisor_post(supervisor_event_t event);
 supervisor_state_t supervisor_state(void);
