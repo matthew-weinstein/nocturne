@@ -4,6 +4,7 @@ idf_component_register(SRCS "sd_card.c"
                             "segment_format.c"
                             "session.c"
                             "session_id.c"
+                            "session_json.c"
                        INCLUDE_DIRS "include"
                        PRIV_INCLUDE_DIRS "private_include"
                        REQUIRES audio
