@@ -237,4 +237,8 @@ void app_main(void)
 #endif
 
     prepare_b2_upload();
+
+#if CONFIG_NOCTURNE_SYSTEM_CHECK
+    system_check_upload();
+#endif
 }
