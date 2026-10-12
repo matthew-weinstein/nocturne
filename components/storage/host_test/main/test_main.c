@@ -8,5 +8,6 @@ void app_main(void) {
     run_segment_cursor_tests();
     run_segment_format_tests();
     run_session_id_tests();
+    run_session_json_tests();
     exit(UNITY_END());
 }
