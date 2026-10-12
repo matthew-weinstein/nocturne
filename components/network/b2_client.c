@@ -9,7 +9,7 @@
 #include "esp_timer.h"
 #include "mbedtls/base64.h"
 
-#define AUTHORIZE_URL     "https://api.backblazeb2.com/b2api/v3/b2_authorize_account"
+#define AUTHORIZE_URL     "https://api.backblazeb2.com/b2api/v4/b2_authorize_account"
 #define HTTP_TIMEOUT_MS   15000
 #define HTTP_STATUS_OK    200
 #define CREDENTIALS_MAX   128
