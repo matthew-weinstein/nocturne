@@ -155,15 +155,15 @@ static void on_recording_finished(esp_err_t result) {
     supervisor_post(result == ESP_OK ? SUPERVISOR_EVENT_FINALIZE_OK : SUPERVISOR_EVENT_FINALIZE_FAILED);
 }
 
-static void authorize_b2(void) {
+static void prepare_b2_upload(void) {
     if (wifi_wait_connected(B2_WIFI_TIMEOUT_MS) != ESP_OK) {
-        ESP_LOGW(TAG, "no wifi, b2 not authorized");
+        ESP_LOGW(TAG, "no wifi, b2 not ready");
         return;
     }
 
-    esp_err_t err = b2_client_authorize();
+    esp_err_t err = b2_client_get_upload_url();
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "b2 not authorized: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "b2 not ready: %s", esp_err_to_name(err));
     }
 }
 
@@ -236,5 +236,5 @@ void app_main(void)
     run_system_check();
 #endif
 
-    authorize_b2();
+    prepare_b2_upload();
 }

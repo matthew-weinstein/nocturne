@@ -9,13 +9,16 @@
 #include "esp_timer.h"
 #include "mbedtls/base64.h"
 
-#define AUTHORIZE_URL     "https://api.backblazeb2.com/b2api/v4/b2_authorize_account"
-#define HTTP_TIMEOUT_MS   15000
-#define HTTP_STATUS_OK    200
-#define CREDENTIALS_MAX   128
-#define BASIC_PREFIX      "Basic "
-#define BASIC_HEADER_MAX  (sizeof(BASIC_PREFIX) + 4 * (CREDENTIALS_MAX / 3 + 1))
-#define RESPONSE_MAX      2048
+#define AUTHORIZE_URL            "https://api.backblazeb2.com/b2api/v4/b2_authorize_account"
+#define UPLOAD_URL_PATH          "/b2api/v4/b2_get_upload_url?bucketId="
+#define HTTP_TIMEOUT_MS          15000
+#define HTTP_STATUS_OK           200
+#define HTTP_STATUS_UNAUTHORIZED 401
+#define REQUEST_URL_MAX          (B2_AUTH_URL_MAX + sizeof(UPLOAD_URL_PATH) + B2_AUTH_BUCKET_ID_MAX)
+#define CREDENTIALS_MAX          128
+#define BASIC_PREFIX             "Basic "
+#define BASIC_HEADER_MAX         (sizeof(BASIC_PREFIX) + 4 * (CREDENTIALS_MAX / 3 + 1))
+#define RESPONSE_MAX             2048
 
 static const char *TAG = "b2_client";
 
@@ -24,6 +27,8 @@ static char response[RESPONSE_MAX];
 static b2_auth_t auth;
 static int64_t authorized_us;
 static bool authorized;
+static b2_upload_url_t upload_url;
+static bool has_upload_url;
 
 esp_err_t b2_client_init(const char *key_id, const char *application_key) {
     char credentials[CREDENTIALS_MAX];
@@ -42,6 +47,7 @@ esp_err_t b2_client_init(const char *key_id, const char *application_key) {
     memset(credentials, 0, sizeof(credentials));
 
     authorized = false;
+    has_upload_url = false;
     if (ret != 0) {
         basic_header[0] = '\0';
         return ESP_ERR_INVALID_SIZE;
@@ -68,9 +74,9 @@ static esp_err_t read_response(esp_http_client_handle_t client, int *out_status)
     return ESP_OK;
 }
 
-static esp_err_t request_authorization(int *out_status) {
+static esp_err_t request_get(const char *url, const char *authorization, int *out_status) {
     esp_http_client_config_t config = {
-        .url = AUTHORIZE_URL,
+        .url = url,
         .method = HTTP_METHOD_GET,
         .timeout_ms = HTTP_TIMEOUT_MS,
         .crt_bundle_attach = esp_crt_bundle_attach,
@@ -81,7 +87,7 @@ static esp_err_t request_authorization(int *out_status) {
         return ESP_ERR_NO_MEM;
     }
 
-    esp_err_t err = esp_http_client_set_header(client, "Authorization", basic_header);
+    esp_err_t err = esp_http_client_set_header(client, "Authorization", authorization);
     if (err == ESP_OK) {
         err = esp_http_client_open(client, 0);
     }
@@ -106,7 +112,7 @@ esp_err_t b2_client_authorize(void) {
     authorized = false;
 
     int status;
-    esp_err_t err = request_authorization(&status);
+    esp_err_t err = request_get(AUTHORIZE_URL, basic_header, &status);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "authorize request failed: %s", esp_err_to_name(err));
         return err;
@@ -126,5 +132,45 @@ esp_err_t b2_client_authorize(void) {
     authorized_us = now_us;
     authorized = true;
     ESP_LOGI(TAG, "authorized, api %s, bucket %s", auth.api_url, auth.bucket_id);
+    return ESP_OK;
+}
+
+esp_err_t b2_client_get_upload_url(void) {
+    esp_err_t err = b2_client_authorize();
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    if (has_upload_url) {
+        return ESP_OK;
+    }
+
+    char url[REQUEST_URL_MAX];
+    snprintf(url, sizeof(url), "%s" UPLOAD_URL_PATH "%s", auth.api_url, auth.bucket_id);
+
+    int status;
+    err = request_get(url, auth.token, &status);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "upload url request failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    if (status == HTTP_STATUS_UNAUTHORIZED) {
+        authorized = false;
+    }
+
+    if (status != HTTP_STATUS_OK) {
+        ESP_LOGE(TAG, "upload url refused, status %d: %s", status, response);
+        return ESP_FAIL;
+    }
+
+    err = b2_auth_parse_upload_url(response, &upload_url);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "upload url response unreadable: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    has_upload_url = true;
+    ESP_LOGI(TAG, "upload url %s", upload_url.url);
     return ESP_OK;
 }
