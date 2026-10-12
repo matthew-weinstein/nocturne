@@ -196,8 +196,16 @@ static void on_recording_finished(esp_err_t result) {
     }
 }
 
-static void on_finalized(esp_err_t result) {
-    supervisor_post(result == ESP_OK ? SUPERVISOR_EVENT_FINALIZE_OK : SUPERVISOR_EVENT_FINALIZE_FAILED);
+static void on_upload_done(uploader_job_t job, esp_err_t result, int num_uploaded) {
+    if (job == UPLOADER_JOB_FINALIZE) {
+        supervisor_post(result == ESP_OK ? SUPERVISOR_EVENT_FINALIZE_OK : SUPERVISOR_EVENT_FINALIZE_FAILED);
+        return;
+    }
+#if CONFIG_NOCTURNE_SYSTEM_CHECK
+    system_check_pending_done(result, num_uploaded);
+#else
+    (void)num_uploaded;
+#endif
 }
 
 static void read_device_id(void) {
@@ -271,7 +279,7 @@ void app_main(void)
     }
 
     ESP_ERROR_CHECK(recorder_init(on_recording_finished));
-    ESP_ERROR_CHECK(uploader_init(on_finalized));
+    ESP_ERROR_CHECK(uploader_init(on_upload_done));
     supervisor_post(SUPERVISOR_EVENT_BOOT_DONE);
 
 #if CONFIG_NOCTURNE_SYSTEM_CHECK

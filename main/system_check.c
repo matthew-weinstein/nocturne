@@ -5,6 +5,8 @@
 #include <sys/stat.h>
 
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "opus.h"
 
 #include "aes_gcm.h"
@@ -20,12 +22,17 @@
 #define PATH_LEN             128
 #define FILENAME_LEN         32
 #define LENGTH_FIELD_BYTES   4
+#define PENDING_TIMEOUT_MS   60000
 
 static uint8_t record[SEGMENT_FORMAT_MAX_CHUNK_RECORD_BYTES];
 static uint8_t plaintext[SEGMENT_FORMAT_MAX_CHUNK_PLAINTEXT_BYTES];
 static int16_t pcm[AUDIO_FORMAT_FRAME_SAMPLES];
 static manifest_t manifest;
 static bool manifest_loaded;
+static StaticSemaphore_t pending_done_storage;
+static SemaphoreHandle_t pending_done;
+static esp_err_t pending_result;
+static int pending_num_uploaded;
 
 static uint32_t read_le32(const uint8_t *bytes) {
     return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8) | ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24);
@@ -256,13 +263,29 @@ static esp_err_t check_uploads(void) {
         return ESP_FAIL;
     }
 
-    int num_uploaded = 0;
-    if (uploader_upload_session(session_dir, &num_uploaded) != ESP_OK || num_uploaded != 0) {
-        ESP_LOGE(TAG, "second pass uploaded %d segments, journal should have left none", num_uploaded);
+    pending_done = xSemaphoreCreateBinaryStatic(&pending_done_storage);
+    if (uploader_upload_pending(session_dir) != ESP_OK) {
+        ESP_LOGE(TAG, "second pass was not queued");
+        return ESP_FAIL;
+    }
+    if (xSemaphoreTake(pending_done, pdMS_TO_TICKS(PENDING_TIMEOUT_MS)) != pdTRUE) {
+        ESP_LOGE(TAG, "second pass did not finish in %d s", PENDING_TIMEOUT_MS / 1000);
+        return ESP_FAIL;
+    }
+    if (pending_result != ESP_OK || pending_num_uploaded != 0) {
+        ESP_LOGE(TAG, "second pass uploaded %d segments, journal should have left none", pending_num_uploaded);
         return ESP_FAIL;
     }
 
     return ESP_OK;
+}
+
+void system_check_pending_done(esp_err_t result, int num_uploaded) {
+    pending_result = result;
+    pending_num_uploaded = num_uploaded;
+    if (pending_done != NULL) {
+        xSemaphoreGive(pending_done);
+    }
 }
 
 esp_err_t system_check_upload(void) {

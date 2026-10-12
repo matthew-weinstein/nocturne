@@ -7,6 +7,7 @@
 #include "b2_client.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/task.h"
 #include "manifest.h"
 #include "wifi.h"
@@ -21,6 +22,7 @@
 #define TASK_STACK_BYTES 12288
 #define TASK_PRIORITY    5
 #define TASK_CORE        0
+#define QUEUE_DEPTH      4
 
 static const char *TAG = "uploader";
 
@@ -30,11 +32,16 @@ static const uint32_t retry_delays_ms[] = { 1000, 4000, 16000 };
 static manifest_t manifest;
 static uint32_t num_retries;
 
-static TaskHandle_t task;
-static uploader_handler_t finalized;
+typedef struct {
+    uploader_job_t job;
+    char session_dir[SESSION_DIR_LEN];
+    session_json_t metadata;
+} uploader_request_t;
+
+static QueueHandle_t requests;
+static uploader_request_t request;
+static uploader_handler_t handler;
 static volatile bool finalizing;
-static char finalize_dir[SESSION_DIR_LEN];
-static session_json_t finalize_metadata;
 static char json[JSON_MAX_BYTES];
 
 static esp_err_t upload_with_retry(const char *path, const char *object_name) {
@@ -106,14 +113,14 @@ static esp_err_t write_file(const char *path, const char *data, size_t num_bytes
     return written ? ESP_OK : ESP_FAIL;
 }
 
-static esp_err_t write_session_json(const char *path) {
-    finalize_metadata.session_id = manifest.session_id;
-    finalize_metadata.started_unix = manifest.started_unix;
-    finalize_metadata.segment_count = manifest.num_segments;
-    finalize_metadata.upload_retries = num_retries;
+static esp_err_t write_session_json(const char *path, session_json_t *metadata) {
+    metadata->session_id = manifest.session_id;
+    metadata->started_unix = manifest.started_unix;
+    metadata->segment_count = manifest.num_segments;
+    metadata->upload_retries = num_retries;
 
     size_t num_bytes = 0;
-    esp_err_t err = session_json_format(&finalize_metadata, json, sizeof(json), &num_bytes);
+    esp_err_t err = session_json_format(metadata, json, sizeof(json), &num_bytes);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "session.json does not fit: %s", esp_err_to_name(err));
         return err;
@@ -126,11 +133,23 @@ static esp_err_t write_session_json(const char *path) {
     return err;
 }
 
-static esp_err_t finalize(void) {
-    num_retries = 0;
+static esp_err_t upload_pending(const char *session_dir, int *out_num_uploaded) {
+    *out_num_uploaded = 0;
 
     char manifest_path[PATH_LEN];
-    esp_err_t err = open_journal(finalize_dir, manifest_path, sizeof(manifest_path));
+    esp_err_t err = open_journal(session_dir, manifest_path, sizeof(manifest_path));
+    if (err != ESP_OK) {
+        return err;
+    }
+    return upload_segments(session_dir, manifest_path, out_num_uploaded);
+}
+
+static esp_err_t finalize(const char *session_dir, session_json_t *metadata, int *out_num_uploaded) {
+    num_retries = 0;
+    *out_num_uploaded = 0;
+
+    char manifest_path[PATH_LEN];
+    esp_err_t err = open_journal(session_dir, manifest_path, sizeof(manifest_path));
     if (err != ESP_OK) {
         return err;
     }
@@ -139,13 +158,12 @@ static esp_err_t finalize(void) {
         ESP_LOGW(TAG, "no wifi after %d s", WIFI_TIMEOUT_MS / 1000);
     }
 
-    int num_uploaded = 0;
-    esp_err_t segments_err = upload_segments(finalize_dir, manifest_path, &num_uploaded);
+    esp_err_t segments_err = upload_segments(session_dir, manifest_path, out_num_uploaded);
 
     char json_path[PATH_LEN];
-    snprintf(json_path, sizeof(json_path), "%s/session.json", finalize_dir);
+    snprintf(json_path, sizeof(json_path), "%s/session.json", session_dir);
 
-    err = write_session_json(json_path);
+    err = write_session_json(json_path, metadata);
     if (err != ESP_OK) {
         return err;
     }
@@ -185,55 +203,78 @@ static void uploader_task(void *arg) {
     prepare_upload();
 
     for (;;) {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        xQueueReceive(requests, &request, portMAX_DELAY);
 
-        esp_err_t result = finalize();
-        if (result != ESP_OK) {
-            ESP_LOGE(TAG, "finalize failed: %s", esp_err_to_name(result));
+        int num_uploaded = 0;
+        esp_err_t result;
+        if (request.job == UPLOADER_JOB_FINALIZE) {
+            result = finalize(request.session_dir, &request.metadata, &num_uploaded);
+            if (result != ESP_OK) {
+                ESP_LOGE(TAG, "finalize failed: %s", esp_err_to_name(result));
+            }
+            finalizing = false;
+        } else {
+            result = upload_pending(request.session_dir, &num_uploaded);
         }
 
-        finalizing = false;
-        if (finalized != NULL) {
-            finalized(result);
+        if (handler != NULL) {
+            handler(request.job, result, num_uploaded);
         }
     }
 }
 
-esp_err_t uploader_init(uploader_handler_t on_finalized) {
-    if (task != NULL) {
+esp_err_t uploader_init(uploader_handler_t on_done) {
+    if (requests != NULL) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    finalized = on_finalized;
+    requests = xQueueCreate(QUEUE_DEPTH, sizeof(uploader_request_t));
+    if (requests == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    handler = on_done;
 
     BaseType_t created = xTaskCreatePinnedToCore(uploader_task, "uploader", TASK_STACK_BYTES,
-                                                 NULL, TASK_PRIORITY, &task, TASK_CORE);
+                                                 NULL, TASK_PRIORITY, NULL, TASK_CORE);
     if (created != pdPASS) {
-        task = NULL;
+        vQueueDelete(requests);
+        requests = NULL;
         return ESP_ERR_NO_MEM;
     }
     return ESP_OK;
 }
 
-esp_err_t uploader_finalize_session(const char *session_dir, const session_json_t *session) {
-    if (task == NULL || finalizing) {
-        return ESP_ERR_INVALID_STATE;
+static esp_err_t post(const uploader_request_t *queued) {
+    if (xQueueSend(requests, queued, 0) != pdTRUE) {
+        ESP_LOGW(TAG, "request queue full, %s dropped", queued->session_dir);
+        return ESP_ERR_NO_MEM;
     }
-
-    snprintf(finalize_dir, sizeof(finalize_dir), "%s", session_dir);
-    finalize_metadata = *session;
-    finalizing = true;
-    xTaskNotifyGive(task);
     return ESP_OK;
 }
 
-esp_err_t uploader_upload_session(const char *session_dir, int *out_num_uploaded) {
-    *out_num_uploaded = 0;
-
-    char manifest_path[PATH_LEN];
-    esp_err_t err = open_journal(session_dir, manifest_path, sizeof(manifest_path));
-    if (err != ESP_OK) {
-        return err;
+esp_err_t uploader_upload_pending(const char *session_dir) {
+    if (requests == NULL) {
+        return ESP_ERR_INVALID_STATE;
     }
-    return upload_segments(session_dir, manifest_path, out_num_uploaded);
+
+    uploader_request_t queued = { .job = UPLOADER_JOB_PENDING };
+    snprintf(queued.session_dir, sizeof(queued.session_dir), "%s", session_dir);
+    return post(&queued);
+}
+
+esp_err_t uploader_finalize_session(const char *session_dir, const session_json_t *session) {
+    if (requests == NULL || finalizing) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    uploader_request_t queued = { .job = UPLOADER_JOB_FINALIZE, .metadata = *session };
+    snprintf(queued.session_dir, sizeof(queued.session_dir), "%s", session_dir);
+
+    finalizing = true;
+    esp_err_t err = post(&queued);
+    if (err != ESP_OK) {
+        finalizing = false;
+    }
+    return err;
 }
