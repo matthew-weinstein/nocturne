@@ -21,9 +21,11 @@
 #include "health.h"
 #include "wifi.h"
 #include "sntp_time.h"
+#include "b2_client.h"
 
 #define STATE_POLL_MS        100
 #define OTA_WIFI_TIMEOUT_MS  30000
+#define B2_WIFI_TIMEOUT_MS   30000
 
 static const char *TAG = "nocturne";
 
@@ -153,6 +155,18 @@ static void on_recording_finished(esp_err_t result) {
     supervisor_post(result == ESP_OK ? SUPERVISOR_EVENT_FINALIZE_OK : SUPERVISOR_EVENT_FINALIZE_FAILED);
 }
 
+static void authorize_b2(void) {
+    if (wifi_wait_connected(B2_WIFI_TIMEOUT_MS) != ESP_OK) {
+        ESP_LOGW(TAG, "no wifi, b2 not authorized");
+        return;
+    }
+
+    esp_err_t err = b2_client_authorize();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "b2 not authorized: %s", esp_err_to_name(err));
+    }
+}
+
 #if CONFIG_NOCTURNE_SYSTEM_CHECK
 static void run_system_check(void) {
     ESP_ERROR_CHECK(key_manager_wait_ready());
@@ -195,6 +209,7 @@ void app_main(void)
 
     ESP_ERROR_CHECK(wifi_init(WIFI_SSID, WIFI_PASS));
     ESP_ERROR_CHECK(sntp_time_init());
+    ESP_ERROR_CHECK(b2_client_init(B2_KEY_ID, B2_APP_KEY));
 
     const esp_partition_t *running = esp_ota_get_running_partition();
     esp_ota_img_states_t state;
@@ -220,4 +235,6 @@ void app_main(void)
 #if CONFIG_NOCTURNE_SYSTEM_CHECK
     run_system_check();
 #endif
+
+    authorize_b2();
 }
