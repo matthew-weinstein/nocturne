@@ -181,6 +181,48 @@ static void test_an_oversized_upload_url_is_rejected(void) {
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_SIZE, b2_auth_parse_upload_url(body, &upload_url));
 }
 
+static const char UPLOADED_FILE_RESPONSE[] =
+    "{\n"
+    "  \"accountId\": \"0123456789ab\",\n"
+    "  \"action\": \"upload\",\n"
+    "  \"bucketId\": \"4a48fe8875c6214145260818\",\n"
+    "  \"contentLength\": 41296,\n"
+    "  \"contentSha1\": \"2fd4e1c67a2d28fced849ee1bb76e7391b93eb12\",\n"
+    "  \"contentType\": \"application/octet-stream\",\n"
+    "  \"fileId\": \"4_z4a48fe8875c6214145260818_f1000000000000001_d20261011_m120000_c006\",\n"
+    "  \"fileInfo\": {},\n"
+    "  \"fileName\": \"20261011_0800/seg_0000.opus.enc\",\n"
+    "  \"uploadTimestamp\": 1791720000000\n"
+    "}\n";
+
+static void test_an_upload_response_yields_file_id_and_sha1(void) {
+    b2_uploaded_file_t uploaded;
+    TEST_ASSERT_EQUAL(ESP_OK, b2_auth_parse_uploaded_file(UPLOADED_FILE_RESPONSE, &uploaded));
+    TEST_ASSERT_EQUAL_STRING("4_z4a48fe8875c6214145260818_f1000000000000001_d20261011_m120000_c006",
+                             uploaded.file_id);
+    TEST_ASSERT_EQUAL_STRING("2fd4e1c67a2d28fced849ee1bb76e7391b93eb12", uploaded.content_sha1);
+}
+
+static void test_an_upload_response_without_a_sha1_is_rejected(void) {
+    b2_uploaded_file_t uploaded;
+    const char *body = "{\"fileId\":\"f\",\"fileName\":\"n\"}";
+    TEST_ASSERT_EQUAL(ESP_ERR_NOT_FOUND, b2_auth_parse_uploaded_file(body, &uploaded));
+}
+
+static void test_an_upload_error_body_is_rejected(void) {
+    b2_uploaded_file_t uploaded;
+    const char *body = "{\"code\":\"bad_request\",\"message\":\"Sha1 did not match data received\","
+                       "\"status\":400}";
+    TEST_ASSERT_EQUAL(ESP_ERR_NOT_FOUND, b2_auth_parse_uploaded_file(body, &uploaded));
+}
+
+static void test_a_sha1_longer_than_a_digest_is_rejected(void) {
+    b2_uploaded_file_t uploaded;
+    const char *body = "{\"fileId\":\"f\","
+                       "\"contentSha1\":\"unverified:2fd4e1c67a2d28fced849ee1bb76e7391b93eb12\"}";
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_SIZE, b2_auth_parse_uploaded_file(body, &uploaded));
+}
+
 static void test_authorization_is_reused_for_23_hours(void) {
     int64_t authorized_us = 5 * HOUR_US;
     TEST_ASSERT_TRUE(b2_auth_is_fresh(authorized_us, authorized_us));
@@ -215,6 +257,10 @@ void run_b2_auth_tests(void) {
     RUN_TEST(test_an_upload_url_without_a_token_is_rejected);
     RUN_TEST(test_an_upload_url_error_body_is_rejected);
     RUN_TEST(test_an_oversized_upload_url_is_rejected);
+    RUN_TEST(test_an_upload_response_yields_file_id_and_sha1);
+    RUN_TEST(test_an_upload_response_without_a_sha1_is_rejected);
+    RUN_TEST(test_an_upload_error_body_is_rejected);
+    RUN_TEST(test_a_sha1_longer_than_a_digest_is_rejected);
     RUN_TEST(test_authorization_is_reused_for_23_hours);
     RUN_TEST(test_a_time_before_authorization_is_not_fresh);
 }

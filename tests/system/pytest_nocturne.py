@@ -6,6 +6,7 @@ from pytest_embedded import Dut
 BOOT_TIMEOUT_S = 60
 CAPTURE_TIMEOUT_S = 60
 CHECK_TIMEOUT_S = 120
+UPLOAD_TIMEOUT_S = 120
 
 BOOT_DONE = "BOOT -> IDLE (boot done)"
 RECORDING_STARTED = "IDLE -> RECORDING (short press)"
@@ -19,10 +20,11 @@ EXPECTED_FRAMES = 1750
 FRAME_TOLERANCE = 50
 
 CHECK_LINE = re.compile(rb"NCT_CHECK ([^\r\n]+)")
+UPLOAD_LINE = re.compile(rb"NCT_UPLOAD ([^\r\n]+)")
 CAPTURE_SUMMARY = re.compile(rb"peak occupancy (\d+), overflows (\d+)")
 
-def read_check(dut):
-    match = dut.expect(CHECK_LINE, timeout=CHECK_TIMEOUT_S)
+def read_fields(dut, line, timeout):
+    match = dut.expect(line, timeout=timeout)
 
     fields = {}
     for pair in match.group(1).decode().split():
@@ -46,11 +48,11 @@ def test_capture_session(dut: Dut):
     dut.expect_exact(FINALIZED, timeout=CHECK_TIMEOUT_S)
 
     segment_frames = []
-    fields = read_check(dut)
+    fields = read_fields(dut, CHECK_LINE, CHECK_TIMEOUT_S)
     while "result" not in fields:
         assert fields["status"] == "ok", f"segment {fields['segment']} failed its check"
         segment_frames.append(int(fields["frames"]))
-        fields = read_check(dut)
+        fields = read_fields(dut, CHECK_LINE, CHECK_TIMEOUT_S)
 
     assert fields["result"] == "PASS"
 
@@ -59,6 +61,16 @@ def test_capture_session(dut: Dut):
         assert frames == FULL_SEGMENT_FRAMES
     assert 0 < segment_frames[-1] <= FULL_SEGMENT_FRAMES
     assert abs(sum(segment_frames) - EXPECTED_FRAMES) <= FRAME_TOLERANCE
+
+    num_uploaded = 0
+    fields = read_fields(dut, UPLOAD_LINE, UPLOAD_TIMEOUT_S)
+    while "result" not in fields:
+        assert fields["status"] == "ok", f"segment {fields['segment']} failed to upload"
+        num_uploaded += 1
+        fields = read_fields(dut, UPLOAD_LINE, UPLOAD_TIMEOUT_S)
+
+    assert fields["result"] == "PASS"
+    assert num_uploaded == len(segment_frames)
 
 @pytest.mark.manual_setup
 def test_fault_without_card(dut: Dut):

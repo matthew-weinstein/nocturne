@@ -9,6 +9,7 @@
 
 #include "aes_gcm.h"
 #include "audio_format.h"
+#include "b2_client.h"
 #include "key_manager.h"
 #include "manifest.h"
 #include "segment_format.h"
@@ -24,6 +25,7 @@ static uint8_t record[SEGMENT_FORMAT_MAX_CHUNK_RECORD_BYTES];
 static uint8_t plaintext[SEGMENT_FORMAT_MAX_CHUNK_PLAINTEXT_BYTES];
 static int16_t pcm[AUDIO_FORMAT_FRAME_SAMPLES];
 static manifest_t manifest;
+static bool manifest_loaded;
 
 static uint32_t read_le32(const uint8_t *bytes) {
     return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8) | ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24);
@@ -203,6 +205,7 @@ static esp_err_t check_session(void) {
         ESP_LOGE(TAG, "manifest_open returned %s", esp_err_to_name(status));
         return ESP_FAIL;
     }
+    manifest_loaded = true;
 
     ESP_LOGI(TAG, "%s: %d segments", session_dir, manifest.num_segments);
     return check_segments(session_dir);
@@ -211,5 +214,41 @@ static esp_err_t check_session(void) {
 esp_err_t system_check_session(void) {
     esp_err_t status = check_session();
     printf("NCT_CHECK result=%s\n", status == ESP_OK ? "PASS" : "FAIL");
+    return status;
+}
+
+static esp_err_t upload_segments(void) {
+    if (!manifest_loaded) {
+        ESP_LOGE(TAG, "no checked session to upload");
+        return ESP_FAIL;
+    }
+
+    const char *session_dir = session_current_dir();
+    const char *session_id = strrchr(session_dir, '/') + 1;
+    esp_err_t result = ESP_OK;
+
+    for (int i = 0; i < manifest.num_segments; i++) {
+        char filename[FILENAME_LEN];
+        manifest_segment_filename(i, filename, sizeof(filename));
+
+        char path[PATH_LEN];
+        char object_name[PATH_LEN];
+        snprintf(path, sizeof(path), "%s/%s", session_dir, filename);
+        snprintf(object_name, sizeof(object_name), "%s/%s", session_id, filename);
+
+        esp_err_t status = b2_client_upload_file(path, object_name);
+        printf("NCT_UPLOAD segment=%d status=%s\n", i, status == ESP_OK ? "ok" : "fail");
+
+        if (status != ESP_OK) {
+            result = ESP_FAIL;
+        }
+    }
+
+    return result;
+}
+
+esp_err_t system_check_upload(void) {
+    esp_err_t status = upload_segments();
+    printf("NCT_UPLOAD result=%s\n", status == ESP_OK ? "PASS" : "FAIL");
     return status;
 }

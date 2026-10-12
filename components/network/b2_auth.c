@@ -155,6 +155,14 @@ esp_err_t b2_auth_parse_upload_url(const char *body, b2_upload_url_t *out) {
     return err;
 }
 
+esp_err_t b2_auth_parse_uploaded_file(const char *body, b2_uploaded_file_t *out) {
+    esp_err_t err = read_field(body, "fileId", out->file_id, sizeof(out->file_id));
+    if (err == ESP_OK) {
+        err = read_field(body, "contentSha1", out->content_sha1, sizeof(out->content_sha1));
+    }
+    return err;
+}
+
 bool b2_auth_is_fresh(int64_t authorized_us, int64_t now_us) {
     int64_t age_us = now_us - authorized_us;
     return age_us >= 0 && age_us < B2_AUTH_REUSE_US;
