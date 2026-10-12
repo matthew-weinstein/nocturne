@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include "b2_auth.h"
 #include "tests.h"
 #include "unity.h"
@@ -140,6 +141,46 @@ static void test_an_empty_value_is_rejected(void) {
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_RESPONSE, b2_auth_parse(body, &auth));
 }
 
+static const char UPLOAD_URL_RESPONSE[] =
+    "{\n"
+    "  \"authorizationToken\": \"4_0050123456789ab0000000001_01a2b3c4_d5e6f7_upld_xyz789=\",\n"
+    "  \"bucketId\": \"4a48fe8875c6214145260818\",\n"
+    "  \"uploadUrl\": \"https://pod-000-1005-03.backblazeb2.com/b2api/v4/b2_upload_file/"
+    "4a48fe8875c6214145260818/c006_v0001005_t0027\"\n"
+    "}\n";
+
+static void test_an_upload_url_response_yields_url_and_token(void) {
+    b2_upload_url_t upload_url;
+    TEST_ASSERT_EQUAL(ESP_OK, b2_auth_parse_upload_url(UPLOAD_URL_RESPONSE, &upload_url));
+    TEST_ASSERT_EQUAL_STRING("https://pod-000-1005-03.backblazeb2.com/b2api/v4/b2_upload_file/"
+                             "4a48fe8875c6214145260818/c006_v0001005_t0027",
+                             upload_url.url);
+    TEST_ASSERT_EQUAL_STRING("4_0050123456789ab0000000001_01a2b3c4_d5e6f7_upld_xyz789=",
+                             upload_url.token);
+}
+
+static void test_an_upload_url_without_a_token_is_rejected(void) {
+    b2_upload_url_t upload_url;
+    const char *body = "{\"bucketId\":\"b\",\"uploadUrl\":\"https://pod.example/upload\"}";
+    TEST_ASSERT_EQUAL(ESP_ERR_NOT_FOUND, b2_auth_parse_upload_url(body, &upload_url));
+}
+
+static void test_an_upload_url_error_body_is_rejected(void) {
+    b2_upload_url_t upload_url;
+    const char *body = "{\"code\":\"expired_auth_token\",\"message\":\"\",\"status\":401}";
+    TEST_ASSERT_EQUAL(ESP_ERR_NOT_FOUND, b2_auth_parse_upload_url(body, &upload_url));
+}
+
+static void test_an_oversized_upload_url_is_rejected(void) {
+    b2_upload_url_t upload_url;
+    char url[B2_AUTH_UPLOAD_URL_MAX + 1];
+    char body[sizeof(url) + 64];
+    memset(url, 'a', B2_AUTH_UPLOAD_URL_MAX);
+    url[B2_AUTH_UPLOAD_URL_MAX] = '\0';
+    snprintf(body, sizeof(body), "{\"authorizationToken\":\"t\",\"uploadUrl\":\"%s\"}", url);
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_SIZE, b2_auth_parse_upload_url(body, &upload_url));
+}
+
 static void test_authorization_is_reused_for_23_hours(void) {
     int64_t authorized_us = 5 * HOUR_US;
     TEST_ASSERT_TRUE(b2_auth_is_fresh(authorized_us, authorized_us));
@@ -170,6 +211,10 @@ void run_b2_auth_tests(void) {
     RUN_TEST(test_an_unterminated_value_is_rejected);
     RUN_TEST(test_an_unsupported_escape_is_rejected);
     RUN_TEST(test_an_empty_value_is_rejected);
+    RUN_TEST(test_an_upload_url_response_yields_url_and_token);
+    RUN_TEST(test_an_upload_url_without_a_token_is_rejected);
+    RUN_TEST(test_an_upload_url_error_body_is_rejected);
+    RUN_TEST(test_an_oversized_upload_url_is_rejected);
     RUN_TEST(test_authorization_is_reused_for_23_hours);
     RUN_TEST(test_a_time_before_authorization_is_not_fresh);
 }

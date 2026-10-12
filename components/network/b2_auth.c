@@ -147,6 +147,14 @@ esp_err_t b2_auth_parse(const char *body, b2_auth_t *out) {
     return err;
 }
 
+esp_err_t b2_auth_parse_upload_url(const char *body, b2_upload_url_t *out) {
+    esp_err_t err = read_field(body, "uploadUrl", out->url, sizeof(out->url));
+    if (err == ESP_OK) {
+        err = read_field(body, "authorizationToken", out->token, sizeof(out->token));
+    }
+    return err;
+}
+
 bool b2_auth_is_fresh(int64_t authorized_us, int64_t now_us) {
     int64_t age_us = now_us - authorized_us;
     return age_us >= 0 && age_us < B2_AUTH_REUSE_US;
