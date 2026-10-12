@@ -9,11 +9,11 @@
 
 #include "aes_gcm.h"
 #include "audio_format.h"
-#include "b2_client.h"
 #include "key_manager.h"
 #include "manifest.h"
 #include "segment_format.h"
 #include "session.h"
+#include "uploader.h"
 
 #define TAG "system_check"
 
@@ -224,27 +224,33 @@ static esp_err_t upload_segments(void) {
     }
 
     const char *session_dir = session_current_dir();
-    const char *session_id = strrchr(session_dir, '/') + 1;
-    esp_err_t result = ESP_OK;
+    int num_uploaded = 0;
+    esp_err_t result = uploader_upload_session(session_dir, &num_uploaded);
 
-    for (int i = 0; i < manifest.num_segments; i++) {
-        char filename[FILENAME_LEN];
-        manifest_segment_filename(i, filename, sizeof(filename));
+    char manifest_path[PATH_LEN];
+    snprintf(manifest_path, sizeof(manifest_path), "%s/manifest.bin", session_dir);
 
-        char path[PATH_LEN];
-        char object_name[PATH_LEN];
-        snprintf(path, sizeof(path), "%s/%s", session_dir, filename);
-        snprintf(object_name, sizeof(object_name), "%s/%s", session_id, filename);
-
-        esp_err_t status = b2_client_upload_file(path, object_name);
-        printf("NCT_UPLOAD segment=%d status=%s\n", i, status == ESP_OK ? "ok" : "fail");
-
-        if (status != ESP_OK) {
-            result = ESP_FAIL;
-        }
+    esp_err_t status = manifest_open(&manifest, manifest_path);
+    if (status != ESP_OK) {
+        ESP_LOGE(TAG, "manifest_open returned %s", esp_err_to_name(status));
+        return ESP_FAIL;
     }
 
-    return result;
+    for (int i = 0; i < manifest.num_segments; i++) {
+        printf("NCT_UPLOAD segment=%d status=%s\n", i, manifest.segments[i].uploaded ? "ok" : "fail");
+    }
+
+    if (result != ESP_OK || num_uploaded != manifest.num_segments) {
+        ESP_LOGE(TAG, "uploaded %d of %d segments", num_uploaded, manifest.num_segments);
+        return ESP_FAIL;
+    }
+
+    if (uploader_upload_session(session_dir, &num_uploaded) != ESP_OK || num_uploaded != 0) {
+        ESP_LOGE(TAG, "second pass uploaded %d segments, journal should have left none", num_uploaded);
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
 }
 
 esp_err_t system_check_upload(void) {
