@@ -99,6 +99,24 @@ static void test_upload_of_an_unknown_segment_is_rejected(void) {
     TEST_ASSERT_EQUAL_INT(HEADER_BYTES + 5 * RECORD_BYTES, file_length());
 }
 
+static void test_next_upload_follows_the_journal(void) {
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_create(&manifest, path, SESSION_ID, STARTED_UNIX));
+    TEST_ASSERT_EQUAL_INT(-1, manifest_next_upload(&manifest));
+
+    write_known();
+    TEST_ASSERT_EQUAL_INT(1, manifest_next_upload(&manifest));
+
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_upload(&manifest, path, 1));
+    TEST_ASSERT_EQUAL_INT(-1, manifest_next_upload(&manifest));
+
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_segment(&manifest, path, 450000));
+    TEST_ASSERT_EQUAL_INT(3, manifest_next_upload(&manifest));
+
+    manifest_t replayed;
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_open(&replayed, path));
+    TEST_ASSERT_EQUAL_INT(3, manifest_next_upload(&replayed));
+}
+
 static void test_segment_filename(void) {
     char name[32];
     manifest_segment_filename(42, name, sizeof(name));
@@ -120,5 +138,6 @@ void run_manifest_tests(void) {
     RUN_MANIFEST_TEST(test_torn_tail_is_truncated_and_the_next_append_lands_aligned);
     RUN_MANIFEST_TEST(test_open_rejects_missing_short_and_foreign_files);
     RUN_MANIFEST_TEST(test_upload_of_an_unknown_segment_is_rejected);
+    RUN_MANIFEST_TEST(test_next_upload_follows_the_journal);
     RUN_MANIFEST_TEST(test_segment_filename);
 }

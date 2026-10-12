@@ -186,3 +186,12 @@ esp_err_t manifest_record_complete(manifest_t *manifest, const char *path) {
     apply_record(manifest, &record);
     return ESP_OK;
 }
+
+int manifest_next_upload(const manifest_t *manifest) {
+    for (int i = 0; i < manifest->num_segments; i++) {
+        if (!manifest->segments[i].uploaded) {
+            return i;
+        }
+    }
+    return -1;
+}
