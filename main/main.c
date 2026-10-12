@@ -1,5 +1,7 @@
 #include <inttypes.h>
+#include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -10,7 +12,9 @@
 #include "esp_ota_ops.h"
 #include "esp_app_desc.h"
 #include "esp_crt_bundle.h"
+#include "esp_mac.h"
 #include "sd_card.h"
+#include "session.h"
 #include "recorder.h"
 #include "sdkconfig.h"
 #include "system_check.h"
@@ -22,12 +26,23 @@
 #include "wifi.h"
 #include "sntp_time.h"
 #include "b2_client.h"
+#include "uploader.h"
 
 #define STATE_POLL_MS        100
 #define OTA_WIFI_TIMEOUT_MS  30000
-#define B2_WIFI_TIMEOUT_MS   30000
+#define DEVICE_ID_LEN        13
+
+#if CONFIG_NOCTURNE_OPUS_APPLICATION_AUDIO
+#define OPUS_APPLICATION_NAME "audio"
+#else
+#define OPUS_APPLICATION_NAME "voip"
+#endif
 
 static const char *TAG = "nocturne";
+
+static char device_id[DEVICE_ID_LEN];
+static bool session_time_reliable;
+static uint32_t session_wifi_disconnects_at_start;
 
 #define OTA_URL "https://github.com/matthew-weinstein/nocturne/releases/latest/download/nocturne.bin"
 
@@ -118,6 +133,9 @@ static void on_transition(supervisor_state_t entered, supervisor_event_t event) 
     (void)event;
 
     if (entered == SUPERVISOR_STATE_RECORDING) {
+        session_time_reliable = sntp_time_is_reliable();
+        session_wifi_disconnects_at_start = wifi_disconnect_count();
+
         esp_err_t err = recorder_start();
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "recording did not start: %s", esp_err_to_name(err));
@@ -152,19 +170,41 @@ static bool check_health(void) {
 }
 
 static void on_recording_finished(esp_err_t result) {
-    supervisor_post(result == ESP_OK ? SUPERVISOR_EVENT_FINALIZE_OK : SUPERVISOR_EVENT_FINALIZE_FAILED);
-}
-
-static void prepare_b2_upload(void) {
-    if (wifi_wait_connected(B2_WIFI_TIMEOUT_MS) != ESP_OK) {
-        ESP_LOGW(TAG, "no wifi, b2 not ready");
+    if (result != ESP_OK) {
+        supervisor_post(SUPERVISOR_EVENT_FINALIZE_FAILED);
         return;
     }
 
-    esp_err_t err = b2_client_get_upload_url();
+    recorder_stats_t stats;
+    recorder_get_stats(&stats);
+
+    session_json_t metadata = {
+        .device_id = device_id,
+        .firmware_version = esp_app_get_description()->version,
+        .opus_application = OPUS_APPLICATION_NAME,
+        .ended_unix = (int64_t)time(NULL),
+        .bitrate = CONFIG_NOCTURNE_OPUS_BITRATE,
+        .time_reliable = session_time_reliable,
+        .buffer_overflows = stats.overflow_count,
+        .wifi_disconnects = wifi_disconnect_count() - session_wifi_disconnects_at_start,
+    };
+
+    esp_err_t err = uploader_finalize_session(session_current_dir(), &metadata);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "b2 not ready: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "finalize did not start: %s", esp_err_to_name(err));
+        supervisor_post(SUPERVISOR_EVENT_FINALIZE_FAILED);
     }
+}
+
+static void on_finalized(esp_err_t result) {
+    supervisor_post(result == ESP_OK ? SUPERVISOR_EVENT_FINALIZE_OK : SUPERVISOR_EVENT_FINALIZE_FAILED);
+}
+
+static void read_device_id(void) {
+    uint8_t mac[6];
+    ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_WIFI_STA));
+    snprintf(device_id, sizeof(device_id), "%02x%02x%02x%02x%02x%02x",
+             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 
 #if CONFIG_NOCTURNE_SYSTEM_CHECK
@@ -200,6 +240,7 @@ void app_main(void)
     ESP_ERROR_CHECK(ret);
 
     ESP_ERROR_CHECK(key_manager_init(NOCTURNE_PASSPHRASE));
+    read_device_id();
     ESP_ERROR_CHECK(led_init());
     ESP_ERROR_CHECK(supervisor_init(on_transition, check_health));
     ESP_ERROR_CHECK(button_init(on_button));
@@ -230,15 +271,11 @@ void app_main(void)
     }
 
     ESP_ERROR_CHECK(recorder_init(on_recording_finished));
+    ESP_ERROR_CHECK(uploader_init(on_finalized));
     supervisor_post(SUPERVISOR_EVENT_BOOT_DONE);
 
 #if CONFIG_NOCTURNE_SYSTEM_CHECK
     run_system_check();
-#endif
-
-    prepare_b2_upload();
-
-#if CONFIG_NOCTURNE_SYSTEM_CHECK
     system_check_upload();
 #endif
 }

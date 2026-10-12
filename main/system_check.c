@@ -217,15 +217,13 @@ esp_err_t system_check_session(void) {
     return status;
 }
 
-static esp_err_t upload_segments(void) {
+static esp_err_t check_uploads(void) {
     if (!manifest_loaded) {
         ESP_LOGE(TAG, "no checked session to upload");
         return ESP_FAIL;
     }
 
     const char *session_dir = session_current_dir();
-    int num_uploaded = 0;
-    esp_err_t result = uploader_upload_session(session_dir, &num_uploaded);
 
     char manifest_path[PATH_LEN];
     snprintf(manifest_path, sizeof(manifest_path), "%s/manifest.bin", session_dir);
@@ -236,15 +234,29 @@ static esp_err_t upload_segments(void) {
         return ESP_FAIL;
     }
 
+    int num_pending = 0;
     for (int i = 0; i < manifest.num_segments; i++) {
         printf("NCT_UPLOAD segment=%d status=%s\n", i, manifest.segments[i].uploaded ? "ok" : "fail");
+        if (!manifest.segments[i].uploaded) {
+            num_pending++;
+        }
     }
 
-    if (result != ESP_OK || num_uploaded != manifest.num_segments) {
-        ESP_LOGE(TAG, "uploaded %d of %d segments", num_uploaded, manifest.num_segments);
+    if (num_pending > 0) {
+        ESP_LOGE(TAG, "finalize left %d of %d segments unuploaded", num_pending, manifest.num_segments);
         return ESP_FAIL;
     }
 
+    char json_path[PATH_LEN];
+    snprintf(json_path, sizeof(json_path), "%s/session.json", session_dir);
+
+    struct stat info;
+    if (stat(json_path, &info) != 0 || info.st_size == 0) {
+        ESP_LOGE(TAG, "%s is missing or empty", json_path);
+        return ESP_FAIL;
+    }
+
+    int num_uploaded = 0;
     if (uploader_upload_session(session_dir, &num_uploaded) != ESP_OK || num_uploaded != 0) {
         ESP_LOGE(TAG, "second pass uploaded %d segments, journal should have left none", num_uploaded);
         return ESP_FAIL;
@@ -254,7 +266,7 @@ static esp_err_t upload_segments(void) {
 }
 
 esp_err_t system_check_upload(void) {
-    esp_err_t status = upload_segments();
+    esp_err_t status = check_uploads();
     printf("NCT_UPLOAD result=%s\n", status == ESP_OK ? "PASS" : "FAIL");
     return status;
 }
