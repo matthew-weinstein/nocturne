@@ -3,6 +3,7 @@
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
 #include <unistd.h>
 #include "b2_client.h"
 #include "esp_log.h"
@@ -31,6 +32,7 @@ static const uint32_t retry_delays_ms[] = { 1000, 4000, 16000 };
 
 static manifest_t manifest;
 static uint32_t num_retries;
+static char retries_dir[SESSION_DIR_LEN];
 
 typedef struct {
     uploader_job_t job;
@@ -145,7 +147,6 @@ static esp_err_t upload_pending(const char *session_dir, int *out_num_uploaded) 
 }
 
 static esp_err_t finalize(const char *session_dir, session_json_t *metadata, int *out_num_uploaded) {
-    num_retries = 0;
     *out_num_uploaded = 0;
 
     char manifest_path[PATH_LEN];
@@ -204,6 +205,11 @@ static void uploader_task(void *arg) {
 
     for (;;) {
         xQueueReceive(requests, &request, portMAX_DELAY);
+
+        if (strcmp(request.session_dir, retries_dir) != 0) {
+            num_retries = 0;
+            snprintf(retries_dir, sizeof(retries_dir), "%s", request.session_dir);
+        }
 
         int num_uploaded = 0;
         esp_err_t result;
