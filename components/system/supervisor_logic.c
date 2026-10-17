@@ -33,6 +33,9 @@ supervisor_state_t supervisor_logic_next_state(supervisor_state_t current, super
         if (event == SUPERVISOR_EVENT_RESUMED) {
             return SUPERVISOR_STATE_RECORDING;
         }
+        if (event == SUPERVISOR_EVENT_BOOT_DONE) {
+            return SUPERVISOR_STATE_IDLE;
+        }
         break;
     case SUPERVISOR_STATE_FAULT:
         break;
