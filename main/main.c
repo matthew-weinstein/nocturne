@@ -36,6 +36,12 @@
 
 #define RESUME_WINDOW_SECONDS (CONFIG_NOCTURNE_RESUME_WINDOW_MINUTES * 60)
 
+#if CONFIG_NOCTURNE_SYSTEM_CHECK
+#define RESUME_ENABLED false
+#else
+#define RESUME_ENABLED true
+#endif
+
 #if CONFIG_NOCTURNE_OPUS_APPLICATION_AUDIO
 #define OPUS_APPLICATION_NAME "audio"
 #else
@@ -57,6 +63,7 @@ static finished_session_t finished_sessions[RECOVERY_MAX_SESSIONS];
 static int num_finished_sessions;
 static int next_finished_session;
 static volatile bool recovery_uploading;
+static char resume_dir[SESSION_DIR_LEN];
 
 #define OTA_URL "https://github.com/matthew-weinstein/nocturne/releases/latest/download/nocturne.bin"
 
@@ -143,12 +150,24 @@ static void on_button(button_event_t event) {
     supervisor_post(events[event]);
 }
 
-static void on_transition(supervisor_state_t entered, supervisor_event_t event) {
-    (void)event;
+static void note_session_start(void) {
+    session_time_reliable = sntp_time_is_reliable();
+    session_wifi_disconnects_at_start = wifi_disconnect_count();
+}
 
-    if (entered == SUPERVISOR_STATE_RECORDING) {
-        session_time_reliable = sntp_time_is_reliable();
-        session_wifi_disconnects_at_start = wifi_disconnect_count();
+static void on_transition(supervisor_state_t entered, supervisor_event_t event) {
+    if (entered == SUPERVISOR_STATE_RESUMING) {
+        note_session_start();
+
+        esp_err_t err = recorder_resume(resume_dir);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "%s did not resume: %s", resume_dir, esp_err_to_name(err));
+            supervisor_post(SUPERVISOR_EVENT_BOOT_DONE);
+            return;
+        }
+        supervisor_post(SUPERVISOR_EVENT_RESUMED);
+    } else if (entered == SUPERVISOR_STATE_RECORDING && event != SUPERVISOR_EVENT_RESUMED) {
+        note_session_start();
 
         esp_err_t err = recorder_start();
         if (err != ESP_OK) {
@@ -291,18 +310,18 @@ static void finish_session(const recovery_session_t *session) {
     ESP_LOGI(TAG, "finished %s, ended %" PRId64, finished->dir, finished->ended_unix);
 }
 
-static void recover_sessions(void) {
+static bool recover_sessions(void) {
     static recovery_scan_t scan;
 
     esp_err_t err = recovery_scan(SESSION_ROOT_DIR, &scan);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "session scan failed: %s", esp_err_to_name(err));
-        return;
+        return false;
     }
 
     ESP_LOGI(TAG, "%d incomplete sessions, %d unreadable", scan.num_incomplete, scan.num_unreadable);
     if (recovery_num_listed(&scan) == 0) {
-        return;
+        return false;
     }
 
     bool time_reliable = recovery_time_reliable();
@@ -314,14 +333,17 @@ static void recover_sessions(void) {
                  session->dir, session->num_segments, session->last_written_unix,
                  now_unix - session->last_written_unix);
 
-        if (i == 0 && recovery_should_resume(session, now_unix, time_reliable, RESUME_WINDOW_SECONDS)) {
-            ESP_LOGI(TAG, "%s is recent enough to resume; left as is until resume lands", session->dir);
+        if (i == 0 && RESUME_ENABLED
+            && recovery_should_resume(session, now_unix, time_reliable, RESUME_WINDOW_SECONDS)) {
+            snprintf(resume_dir, sizeof(resume_dir), "%s", session->dir);
+            ESP_LOGI(TAG, "resuming %s", resume_dir);
             continue;
         }
         finish_session(session);
     }
 
     upload_next_finished_session();
+    return resume_dir[0] != '\0';
 }
 
 static void read_device_id(void) {
@@ -415,8 +437,8 @@ void app_main(void)
 
     ESP_ERROR_CHECK(recorder_init(on_recording_finished, on_segment_closed, on_backpressure));
     ESP_ERROR_CHECK(uploader_init(on_upload_done));
-    recover_sessions();
-    supervisor_post(SUPERVISOR_EVENT_BOOT_DONE);
+    bool resuming = recover_sessions();
+    supervisor_post(resuming ? SUPERVISOR_EVENT_RESUME_FOUND : SUPERVISOR_EVENT_BOOT_DONE);
 
 #if CONFIG_NOCTURNE_SYSTEM_CHECK
     run_system_check();
