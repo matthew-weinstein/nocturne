@@ -150,6 +150,31 @@ static void test_heartbeat_is_appended_and_leaves_the_state_unchanged(void) {
     assert_known(&replayed, true);
 }
 
+static void test_resume_records_are_counted_on_replay(void) {
+    write_known();
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_resume(&manifest, path));
+    TEST_ASSERT_EQUAL_INT(1, manifest.resume_count);
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_segment(&manifest, path, 450000));
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_resume(&manifest, path));
+    TEST_ASSERT_EQUAL_INT(2, manifest.resume_count);
+    TEST_ASSERT_EQUAL_INT(HEADER_BYTES + 8 * RECORD_BYTES, file_length());
+
+    manifest_t replayed;
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_open(&replayed, path));
+    TEST_ASSERT_EQUAL_INT(2, replayed.resume_count);
+    TEST_ASSERT_EQUAL_INT(4, replayed.num_segments);
+    TEST_ASSERT_FALSE(replayed.complete);
+}
+
+static void test_a_new_journal_has_no_resumes(void) {
+    write_known();
+    TEST_ASSERT_EQUAL_INT(0, manifest.resume_count);
+
+    manifest_t replayed;
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_open(&replayed, path));
+    TEST_ASSERT_EQUAL_INT(0, replayed.resume_count);
+}
+
 static void test_segment_filename(void) {
     char name[32];
     manifest_segment_filename(42, name, sizeof(name));
@@ -174,5 +199,7 @@ void run_manifest_tests(void) {
     RUN_MANIFEST_TEST(test_next_upload_follows_the_journal);
     RUN_MANIFEST_TEST(test_pending_counts_closed_segments_not_uploaded);
     RUN_MANIFEST_TEST(test_heartbeat_is_appended_and_leaves_the_state_unchanged);
+    RUN_MANIFEST_TEST(test_resume_records_are_counted_on_replay);
+    RUN_MANIFEST_TEST(test_a_new_journal_has_no_resumes);
     RUN_MANIFEST_TEST(test_segment_filename);
 }
