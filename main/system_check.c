@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 
 #include "esp_log.h"
+#include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "opus.h"
@@ -302,4 +303,9 @@ esp_err_t system_check_upload(void) {
     printf("NCT_UPLOAD result=%s while_recording=%d\n", status == ESP_OK ? "PASS" : "FAIL",
            num_uploaded_while_recording);
     return status;
+}
+
+void system_check_wifi_outage(bool down) {
+    esp_err_t status = down ? esp_wifi_stop() : esp_wifi_start();
+    printf("NCT_WIFI outage=%s status=%s\n", down ? "start" : "end", esp_err_to_name(status));
 }

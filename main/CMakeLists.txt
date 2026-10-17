@@ -15,4 +15,5 @@ idf_component_register(SRCS "main.c"
                                 app_update
                                 mbedtls
                                 esp_hw_support
+                                esp_wifi
                                 esphome__micro-opus)

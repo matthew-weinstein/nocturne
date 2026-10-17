@@ -8,6 +8,12 @@ menu "Nocturne"
         int "System-check capture length (seconds)"
         default 35
         depends on NOCTURNE_SYSTEM_CHECK
-        range 5 600
+        range 5 28800
+
+    config NOCTURNE_SYSTEM_CHECK_WIFI_OUTAGE_SECONDS
+        int "System-check WiFi outage, centred on the health check (seconds, 0 for none)"
+        default 0
+        depends on NOCTURNE_SYSTEM_CHECK
+        range 0 3600
 
 endmenu
