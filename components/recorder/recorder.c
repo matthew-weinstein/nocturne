@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "audio_encoder.h"
 #include "audio_format.h"
+#include "backpressure.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -32,6 +33,8 @@ static uint8_t packet[AUDIO_FORMAT_MAX_PACKET_BYTES];
 static TaskHandle_t task;
 static recorder_handler_t finished;
 static recorder_segment_handler_t segment_closed;
+static recorder_backpressure_handler_t backpressure_changed;
+static bool backpressure_engaged;
 static volatile bool recording;
 static volatile bool stop_requested;
 
@@ -74,6 +77,16 @@ static void mark_failed(void) {
     taskEXIT_CRITICAL(&stats_lock);
 }
 
+static void set_backpressure(bool engaged) {
+    if (engaged == backpressure_engaged) {
+        return;
+    }
+    backpressure_engaged = engaged;
+    if (backpressure_changed != NULL) {
+        backpressure_changed(engaged);
+    }
+}
+
 static esp_err_t encode_available(void) {
     while (ring_buffer_available() >= AUDIO_FORMAT_FRAME_SAMPLES) {
         esp_err_t status = ring_buffer_read(frame, AUDIO_FORMAT_FRAME_SAMPLES);
@@ -99,6 +112,7 @@ static esp_err_t capture(void) {
     uint32_t captured = 0;
     size_t max_occupancy = 0;
     uint32_t num_overflows = 0;
+    uint32_t num_engaged = 0;
     esp_err_t status = ESP_OK;
 
     while (!stop_requested && status == ESP_OK) {
@@ -121,11 +135,19 @@ static esp_err_t capture(void) {
             max_occupancy = occupancy;
         }
 
+        bool engaged = backpressure_update(backpressure_engaged, occupancy, RING_CAPACITY_SAMPLES);
+        if (engaged && !backpressure_engaged) {
+            num_engaged++;
+        }
+        set_backpressure(engaged);
+
         status = encode_available();
     }
 
-    ESP_LOGI(TAG, "captured %" PRIu32 " samples, peak occupancy %u, overflows %u",
-             captured, (unsigned)max_occupancy, (unsigned)num_overflows);
+    set_backpressure(false);
+
+    ESP_LOGI(TAG, "captured %" PRIu32 " samples, peak occupancy %u, overflows %u, uploads paused %" PRIu32 " times",
+             captured, (unsigned)max_occupancy, (unsigned)num_overflows, num_engaged);
     return status;
 }
 
@@ -175,7 +197,8 @@ static void recorder_task(void *arg) {
     }
 }
 
-esp_err_t recorder_init(recorder_handler_t on_finished, recorder_segment_handler_t on_segment_closed) {
+esp_err_t recorder_init(recorder_handler_t on_finished, recorder_segment_handler_t on_segment_closed,
+                        recorder_backpressure_handler_t on_backpressure) {
     if (task != NULL) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -187,6 +210,7 @@ esp_err_t recorder_init(recorder_handler_t on_finished, recorder_segment_handler
 
     finished = on_finished;
     segment_closed = on_segment_closed;
+    backpressure_changed = on_backpressure;
 
     BaseType_t created = xTaskCreatePinnedToCore(recorder_task, "recorder", TASK_STACK_BYTES,
                                                  NULL, TASK_PRIORITY, &task, TASK_CORE);

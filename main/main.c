@@ -176,6 +176,10 @@ static void on_segment_closed(const char *session_dir) {
     uploader_upload_pending(session_dir);
 }
 
+static void on_backpressure(bool engaged) {
+    uploader_set_paused(engaged);
+}
+
 static void on_recording_finished(esp_err_t result) {
     if (result != ESP_OK) {
         supervisor_post(SUPERVISOR_EVENT_FINALIZE_FAILED);
@@ -285,7 +289,7 @@ void app_main(void)
         return;
     }
 
-    ESP_ERROR_CHECK(recorder_init(on_recording_finished, on_segment_closed));
+    ESP_ERROR_CHECK(recorder_init(on_recording_finished, on_segment_closed, on_backpressure));
     ESP_ERROR_CHECK(uploader_init(on_upload_done));
     supervisor_post(SUPERVISOR_EVENT_BOOT_DONE);
 

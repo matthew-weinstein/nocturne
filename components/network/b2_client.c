@@ -32,6 +32,7 @@ static int64_t authorized_us;
 static bool authorized;
 static b2_upload_url_t upload_url;
 static bool has_upload_url;
+static b2_client_block_hook_t block_hook;
 
 esp_err_t b2_client_init(const char *key_id, const char *application_key) {
     char credentials[CREDENTIALS_MAX];
@@ -100,6 +101,10 @@ static esp_err_t request_get(const char *url, const char *authorization, int *ou
 
     esp_http_client_cleanup(client);
     return err;
+}
+
+void b2_client_set_block_hook(b2_client_block_hook_t hook) {
+    block_hook = hook;
 }
 
 esp_err_t b2_client_authorize(void) {
@@ -198,6 +203,10 @@ static esp_err_t write_body(esp_http_client_handle_t client, const char *path, s
 
     esp_err_t err = ESP_OK;
     while (err == ESP_OK && num_bytes > 0) {
+        if (block_hook != NULL) {
+            block_hook();
+        }
+
         size_t block = num_bytes < sizeof(body_block) ? num_bytes : sizeof(body_block);
         if (fread(body_block, 1, block, file) != block) {
             err = ESP_FAIL;
