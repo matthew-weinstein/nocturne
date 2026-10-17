@@ -17,5 +17,6 @@ typedef struct {
 esp_err_t recorder_init(recorder_handler_t on_finished, recorder_segment_handler_t on_segment_closed,
                         recorder_backpressure_handler_t on_backpressure);
 esp_err_t recorder_start(void);
+esp_err_t recorder_resume(const char *session_dir);
 esp_err_t recorder_stop(void);
 void recorder_get_stats(recorder_stats_t *out_stats);
