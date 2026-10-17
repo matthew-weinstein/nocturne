@@ -12,7 +12,7 @@
 
 #define STARTED_UNIX   1767225600
 #define PATH_LEN       128
-#define WINDOW_SECONDS (15 * 60)
+#define WINDOW_SECONDS (60 * 60)
 
 static char root[64];
 static manifest_t manifest;
