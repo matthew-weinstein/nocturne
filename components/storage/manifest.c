@@ -1,5 +1,6 @@
 #include "manifest.h"
 
+#include <pthread.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -23,21 +24,31 @@ typedef struct __attribute__((packed)) {
     uint32_t num_bytes;
 } manifest_record_t;
 
+static pthread_mutex_t journal_lock = PTHREAD_MUTEX_INITIALIZER;
+
 void manifest_segment_filename(int index, char *out, size_t out_len) {
     snprintf(out, out_len, "seg_%04d.opus.enc", index);
 }
 
-static esp_err_t append_record(const char *path, const manifest_record_t *record) {
-    FILE *file = fopen(path, "ab");
+static esp_err_t write_journal(const char *path, const char *mode, const void *data, size_t num_bytes) {
+    pthread_mutex_lock(&journal_lock);
+
+    FILE *file = fopen(path, mode);
     if (file == NULL) {
+        pthread_mutex_unlock(&journal_lock);
         return ESP_FAIL;
     }
 
-    size_t written = fwrite(record, sizeof(*record), 1, file);
+    size_t written = fwrite(data, num_bytes, 1, file);
     fflush(file);
     fclose(file);
 
+    pthread_mutex_unlock(&journal_lock);
     return (written == 1) ? ESP_OK : ESP_FAIL;
+}
+
+static esp_err_t append_record(const char *path, const manifest_record_t *record) {
+    return write_journal(path, "ab", record, sizeof(*record));
 }
 
 static void apply_record(manifest_t *manifest, const manifest_record_t *record) {
@@ -75,21 +86,10 @@ esp_err_t manifest_create(manifest_t *manifest, const char *path, const char *se
     strncpy(header.session_id, session_id, MANIFEST_SESSION_ID_LEN - 1);
     header.started_unix = started_unix;
 
-    FILE *file = fopen(path, "wb");
-    if (file == NULL) {
-        return ESP_FAIL;
-    }
-
-    size_t written = fwrite(&header, sizeof(header), 1, file);
-    fflush(file);
-    fclose(file);
-
-    return (written == 1) ? ESP_OK : ESP_FAIL;
+    return write_journal(path, "wb", &header, sizeof(header));
 }
 
-#include <unistd.h>
-
-esp_err_t manifest_open(manifest_t *manifest, const char *path) {
+static esp_err_t replay(manifest_t *manifest, const char *path) {
     FILE *file = fopen(path, "rb");
     if (file == NULL) {
         return ESP_ERR_NOT_FOUND;
@@ -129,6 +129,13 @@ esp_err_t manifest_open(manifest_t *manifest, const char *path) {
         }
     }
     return ESP_OK;
+}
+
+esp_err_t manifest_open(manifest_t *manifest, const char *path) {
+    pthread_mutex_lock(&journal_lock);
+    esp_err_t status = replay(manifest, path);
+    pthread_mutex_unlock(&journal_lock);
+    return status;
 }
 
 esp_err_t manifest_record_segment(manifest_t *manifest, const char *path, size_t num_bytes) {
