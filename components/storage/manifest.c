@@ -12,6 +12,7 @@
 #define RECORD_SEGMENT_UPLOADED 2
 #define RECORD_SESSION_COMPLETE 3
 #define RECORD_HEARTBEAT 4
+#define RECORD_SESSION_RESUMED 5
 
 typedef struct __attribute__((packed)) {
     char magic[MANIFEST_MAGIC_LEN];
@@ -70,6 +71,9 @@ static void apply_record(manifest_t *manifest, const manifest_record_t *record) 
         break;
     case RECORD_SESSION_COMPLETE:
         manifest->complete = true;
+        break;
+    case RECORD_SESSION_RESUMED:
+        manifest->resume_count++;
         break;
     default:
         break;
@@ -203,6 +207,22 @@ esp_err_t manifest_record_heartbeat(const char *path) {
     };
 
     return append_record(path, &record);
+}
+
+esp_err_t manifest_record_resume(manifest_t *manifest, const char *path) {
+    manifest_record_t record = {
+        .type = RECORD_SESSION_RESUMED,
+        .index = 0,
+        .num_bytes = 0,
+    };
+
+    esp_err_t status = append_record(path, &record);
+    if (status != ESP_OK) {
+        return status;
+    }
+
+    apply_record(manifest, &record);
+    return ESP_OK;
 }
 
 int manifest_next_upload(const manifest_t *manifest) {

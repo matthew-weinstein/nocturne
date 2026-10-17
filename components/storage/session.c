@@ -184,6 +184,10 @@ esp_err_t session_resume(const char *existing_session_dir, session_segment_handl
     if (status != ESP_OK) {
         return status;
     }
+    status = manifest_record_resume(&manifest, manifest_path);
+    if (status != ESP_OK) {
+        return status;
+    }
     if (segment_closed != NULL) {
         segment_closed(session_dir);
     }
