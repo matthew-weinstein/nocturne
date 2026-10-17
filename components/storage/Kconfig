@@ -5,4 +5,12 @@ menu "Nocturne storage"
         default 300
         range 5 3600
 
+    config NOCTURNE_RESUME_WINDOW_MINUTES
+        int "Resume window (minutes)"
+        default 15
+        range 1 120
+        help
+            An interrupted session whose journal was last written within
+            this window is resumed at boot; an older one is finished.
+
 endmenu
