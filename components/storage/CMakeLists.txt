@@ -1,5 +1,6 @@
 idf_component_register(SRCS "sd_card.c"
                             "manifest.c"
+                            "recovery.c"
                             "segment_cursor.c"
                             "segment_format.c"
                             "session.c"

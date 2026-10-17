@@ -19,7 +19,6 @@
 
 #define MAX_COLLISION_SUFFIX 99
 
-#define SESSIONS_DIR       SD_CARD_MOUNT_POINT "/sessions"
 #define SEGMENT_SECONDS CONFIG_NOCTURNE_SEGMENT_SECONDS
 #define FRAMES_PER_SEGMENT ((SEGMENT_SECONDS * 1000) / AUDIO_FORMAT_FRAME_MS)
 
@@ -129,7 +128,7 @@ esp_err_t session_start(session_segment_handler_t on_segment_closed) {
         return key_status;
     }
 
-    mkdir(SESSIONS_DIR, 0755);
+    mkdir(SESSION_ROOT_DIR, 0755);
 
     time_t now = time(NULL);
     struct tm local;
@@ -139,7 +138,7 @@ esp_err_t session_start(session_segment_handler_t on_segment_closed) {
     session_id_format(&local, 0, session_id, sizeof(session_id));
 
     for (int suffix = 1; ; suffix++) {
-        snprintf(session_dir, sizeof(session_dir), "%s/%s", SESSIONS_DIR, session_id);
+        snprintf(session_dir, sizeof(session_dir), "%s/%s", SESSION_ROOT_DIR, session_id);
 
         if (mkdir(session_dir, 0755) == 0) {
             break;
