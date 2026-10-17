@@ -194,6 +194,10 @@ esp_err_t session_write_packet(const uint8_t *packet, size_t num_bytes) {
         if (status != ESP_OK) {
             return status;
         }
+        status = manifest_record_heartbeat(manifest_path);
+        if (status != ESP_OK) {
+            return status;
+        }
         if (segment_closed != NULL) {
             segment_closed(session_dir);
         }
