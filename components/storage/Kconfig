@@ -7,7 +7,7 @@ menu "Nocturne storage"
 
     config NOCTURNE_RESUME_WINDOW_MINUTES
         int "Resume window (minutes)"
-        default 15
+        default 60
         range 1 120
         help
             An interrupted session whose journal was last written within
