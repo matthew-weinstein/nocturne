@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include "audio_encoder.h"
 #include "audio_format.h"
 #include "backpressure.h"
@@ -35,6 +36,7 @@ static recorder_handler_t finished;
 static recorder_segment_handler_t segment_closed;
 static recorder_backpressure_handler_t backpressure_changed;
 static bool backpressure_engaged;
+static char resume_dir[SESSION_DIR_LEN];
 static volatile bool recording;
 static volatile bool stop_requested;
 
@@ -159,7 +161,11 @@ static esp_err_t record_session(void) {
 
     status = audio_encoder_init();
     if (status == ESP_OK) {
-        status = session_start(segment_closed);
+        if (resume_dir[0] == '\0') {
+            status = session_start(segment_closed);
+        } else {
+            status = session_resume(resume_dir, segment_closed);
+        }
     }
 
     if (status == ESP_OK) {
@@ -221,16 +227,28 @@ esp_err_t recorder_init(recorder_handler_t on_finished, recorder_segment_handler
     return ESP_OK;
 }
 
-esp_err_t recorder_start(void) {
+static esp_err_t begin(const char *session_dir) {
     if (task == NULL || recording) {
         return ESP_ERR_INVALID_STATE;
     }
 
+    snprintf(resume_dir, sizeof(resume_dir), "%s", session_dir);
     reset_stats();
     stop_requested = false;
     recording = true;
     xTaskNotifyGive(task);
     return ESP_OK;
+}
+
+esp_err_t recorder_start(void) {
+    return begin("");
+}
+
+esp_err_t recorder_resume(const char *session_dir) {
+    if (session_dir[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return begin(session_dir);
 }
 
 esp_err_t recorder_stop(void) {
