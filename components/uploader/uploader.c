@@ -245,12 +245,14 @@ static void uploader_task(void *arg) {
 
         int num_uploaded = 0;
         esp_err_t result;
-        if (request.job == UPLOADER_JOB_FINALIZE) {
+        if (request.job == UPLOADER_JOB_FINALIZE || request.job == UPLOADER_JOB_RECOVER) {
             result = finalize(request.session_dir, &request.metadata, &num_uploaded);
             if (result != ESP_OK) {
                 ESP_LOGE(TAG, "finalize failed: %s", esp_err_to_name(result));
             }
-            finalizing = false;
+            if (request.job == UPLOADER_JOB_FINALIZE) {
+                finalizing = false;
+            }
         } else {
             result = upload_pending(request.session_dir, &num_uploaded);
         }
@@ -303,19 +305,28 @@ static esp_err_t post(const uploader_request_t *queued) {
     return ESP_OK;
 }
 
-esp_err_t uploader_upload_pending(const char *session_dir) {
+static esp_err_t post_leaving_finalize_slot(const uploader_request_t *queued) {
     if (requests == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
 
     if (uxQueueSpacesAvailable(requests) <= FINALIZE_SLOTS) {
-        ESP_LOGW(TAG, "request queue nearly full, pass over %s dropped", session_dir);
+        ESP_LOGW(TAG, "request queue nearly full, %s dropped", queued->session_dir);
         return ESP_ERR_NO_MEM;
     }
+    return post(queued);
+}
 
+esp_err_t uploader_upload_pending(const char *session_dir) {
     uploader_request_t queued = { .job = UPLOADER_JOB_PENDING };
     snprintf(queued.session_dir, sizeof(queued.session_dir), "%s", session_dir);
-    return post(&queued);
+    return post_leaving_finalize_slot(&queued);
+}
+
+esp_err_t uploader_recover_session(const char *session_dir, const session_json_t *session) {
+    uploader_request_t queued = { .job = UPLOADER_JOB_RECOVER, .metadata = *session };
+    snprintf(queued.session_dir, sizeof(queued.session_dir), "%s", session_dir);
+    return post_leaving_finalize_slot(&queued);
 }
 
 esp_err_t uploader_finalize_session(const char *session_dir, const session_json_t *session) {
