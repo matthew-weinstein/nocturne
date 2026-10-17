@@ -159,14 +159,21 @@ static bool check_health(void) {
         .silent_ms = stats.silent_ms,
     };
     inputs.sd_mounted = sd_card_free_pct(&inputs.free_space_pct) == ESP_OK;
+    inputs.upload_queue_depth = (uint32_t)uploader_pending_segments(session_current_dir());
+    inputs.wifi_reconnecting = !wifi_is_connected();
 
     uint32_t problems = health_evaluate(&inputs);
     ESP_LOGI(TAG, "health: sd %s, free %" PRIu32 "%%, recorder %s, overflows %" PRIu32
-             ", silent %" PRIu32 " ms, problems 0x%02" PRIx32,
+             ", silent %" PRIu32 " ms, upload queue %" PRIu32 ", wifi %s, problems 0x%02" PRIx32,
              inputs.sd_mounted ? "ok" : "missing", inputs.free_space_pct,
              inputs.recorder_failed ? "failed" : "ok", inputs.overflow_count,
-             inputs.silent_ms, problems);
+             inputs.silent_ms, inputs.upload_queue_depth,
+             inputs.wifi_reconnecting ? "reconnecting" : "up", problems);
     return problems == 0;
+}
+
+static void on_segment_closed(const char *session_dir) {
+    uploader_upload_pending(session_dir);
 }
 
 static void on_recording_finished(esp_err_t result) {

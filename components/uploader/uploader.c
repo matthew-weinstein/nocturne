@@ -24,6 +24,7 @@
 #define TASK_PRIORITY    5
 #define TASK_CORE        0
 #define QUEUE_DEPTH      4
+#define FINALIZE_SLOTS   1
 
 static const char *TAG = "uploader";
 
@@ -262,6 +263,11 @@ static esp_err_t post(const uploader_request_t *queued) {
 esp_err_t uploader_upload_pending(const char *session_dir) {
     if (requests == NULL) {
         return ESP_ERR_INVALID_STATE;
+    }
+
+    if (uxQueueSpacesAvailable(requests) <= FINALIZE_SLOTS) {
+        ESP_LOGW(TAG, "request queue nearly full, pass over %s dropped", session_dir);
+        return ESP_ERR_NO_MEM;
     }
 
     uploader_request_t queued = { .job = UPLOADER_JOB_PENDING };

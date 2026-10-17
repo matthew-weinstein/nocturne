@@ -72,6 +72,10 @@ def test_capture_session(dut: Dut):
     assert fields["result"] == "PASS"
     assert num_uploaded == len(segment_frames)
 
+    uploaded_while_recording = int(fields["while_recording"])
+    print(f"uploaded while recording {uploaded_while_recording}")
+    assert uploaded_while_recording > 0
+
 @pytest.mark.manual_setup
 def test_fault_without_card(dut: Dut):
     dut.expect_exact(FAULT, timeout=BOOT_TIMEOUT_S)
