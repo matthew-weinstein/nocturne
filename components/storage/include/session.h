@@ -3,6 +3,9 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "esp_err.h"
+#include "sd_card.h"
+
+#define SESSION_ROOT_DIR SD_CARD_MOUNT_POINT "/sessions"
 
 typedef void (*session_segment_handler_t)(const char *session_dir);
 

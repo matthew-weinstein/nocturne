@@ -15,6 +15,7 @@
 #include "esp_mac.h"
 #include "sd_card.h"
 #include "session.h"
+#include "recovery.h"
 #include "recorder.h"
 #include "sdkconfig.h"
 #include "system_check.h"
@@ -219,6 +220,23 @@ static void on_upload_done(uploader_job_t job, esp_err_t result, int num_uploade
 #endif
 }
 
+static void log_incomplete_sessions(void) {
+    static recovery_scan_t scan;
+
+    esp_err_t err = recovery_scan(SESSION_ROOT_DIR, &scan);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "session scan failed: %s", esp_err_to_name(err));
+        return;
+    }
+
+    ESP_LOGI(TAG, "%d incomplete sessions, %d unreadable", scan.num_incomplete, scan.num_unreadable);
+    for (int i = 0; i < recovery_num_listed(&scan); i++) {
+        const recovery_session_t *session = &scan.sessions[i];
+        ESP_LOGI(TAG, "incomplete: %s, %d segments, last written %" PRId64,
+                 session->dir, session->num_segments, session->last_written_unix);
+    }
+}
+
 static void read_device_id(void) {
     uint8_t mac[6];
     ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_WIFI_STA));
@@ -308,6 +326,7 @@ void app_main(void)
         return;
     }
 
+    log_incomplete_sessions();
     ESP_ERROR_CHECK(recorder_init(on_recording_finished, on_segment_closed, on_backpressure));
     ESP_ERROR_CHECK(uploader_init(on_upload_done));
     supervisor_post(SUPERVISOR_EVENT_BOOT_DONE);
