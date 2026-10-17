@@ -285,7 +285,7 @@ void app_main(void)
         return;
     }
 
-    ESP_ERROR_CHECK(recorder_init(on_recording_finished));
+    ESP_ERROR_CHECK(recorder_init(on_recording_finished, on_segment_closed));
     ESP_ERROR_CHECK(uploader_init(on_upload_done));
     supervisor_post(SUPERVISOR_EVENT_BOOT_DONE);
 

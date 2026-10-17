@@ -202,3 +202,13 @@ int manifest_next_upload(const manifest_t *manifest) {
     }
     return -1;
 }
+
+int manifest_num_pending(const manifest_t *manifest) {
+    int num_pending = 0;
+    for (int i = 0; i < manifest->num_segments; i++) {
+        if (!manifest->segments[i].uploaded) {
+            num_pending++;
+        }
+    }
+    return num_pending;
+}
