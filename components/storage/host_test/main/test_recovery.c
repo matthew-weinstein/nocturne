@@ -285,6 +285,45 @@ static void test_a_finished_session_is_no_longer_listed(void) {
     TEST_ASSERT_EQUAL_INT(0, scan.num_incomplete);
 }
 
+static void test_resume_records_the_open_segment_and_leaves_the_session_open(void) {
+    make_session("20260101_0000", 2, false, STARTED_UNIX + 600);
+
+    char path[PATH_LEN];
+    session_path("20260101_0000", "seg_0002.opus.enc", path, sizeof(path));
+    write_bytes(path, 5000);
+    set_file_mtime(path, STARTED_UNIX + 777);
+
+    char session_dir[PATH_LEN];
+    snprintf(session_dir, sizeof(session_dir), "%s/%s", root, "20260101_0000");
+
+    replay("20260101_0000");
+    int64_t written_unix = 0;
+    TEST_ASSERT_EQUAL(ESP_OK, recovery_record_open_segment(&manifest, session_dir, &written_unix));
+    TEST_ASSERT_EQUAL_INT64(STARTED_UNIX + 777, written_unix);
+    TEST_ASSERT_EQUAL_INT(3, manifest.num_segments);
+
+    replay("20260101_0000");
+    TEST_ASSERT_FALSE(manifest.complete);
+    TEST_ASSERT_EQUAL_INT(3, manifest.num_segments);
+    TEST_ASSERT_EQUAL_size_t(5000, manifest.segments[2].num_bytes);
+}
+
+static void test_resume_without_an_open_segment_records_nothing(void) {
+    make_session("20260101_0000", 2, false, STARTED_UNIX + 600);
+
+    char session_dir[PATH_LEN];
+    snprintf(session_dir, sizeof(session_dir), "%s/%s", root, "20260101_0000");
+
+    replay("20260101_0000");
+    int64_t written_unix = 0;
+    TEST_ASSERT_EQUAL(ESP_OK, recovery_record_open_segment(&manifest, session_dir, &written_unix));
+    TEST_ASSERT_EQUAL_INT64(0, written_unix);
+
+    replay("20260101_0000");
+    TEST_ASSERT_FALSE(manifest.complete);
+    TEST_ASSERT_EQUAL_INT(2, manifest.num_segments);
+}
+
 static void run(void (*test)(void), const char *name, int line) {
     snprintf(root, sizeof(root), "/tmp/nocturne_recovery_%d", (int)getpid());
     remove_tree(root);
@@ -311,4 +350,6 @@ void run_recovery_tests(void) {
     RUN_RECOVERY_TEST(test_finish_skips_an_open_segment_holding_only_its_header);
     RUN_RECOVERY_TEST(test_finish_without_an_open_segment_ends_at_the_journal_mtime);
     RUN_RECOVERY_TEST(test_a_finished_session_is_no_longer_listed);
+    RUN_RECOVERY_TEST(test_resume_records_the_open_segment_and_leaves_the_session_open);
+    RUN_RECOVERY_TEST(test_resume_without_an_open_segment_records_nothing);
 }

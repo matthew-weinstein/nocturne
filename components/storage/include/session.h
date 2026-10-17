@@ -6,6 +6,7 @@
 #include "sd_card.h"
 
 #define SESSION_ROOT_DIR SD_CARD_MOUNT_POINT "/sessions"
+#define SESSION_DIR_LEN  64
 
 typedef void (*session_segment_handler_t)(const char *session_dir);
 
