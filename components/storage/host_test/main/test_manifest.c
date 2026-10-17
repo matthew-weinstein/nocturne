@@ -135,6 +135,21 @@ static void test_pending_counts_closed_segments_not_uploaded(void) {
     TEST_ASSERT_EQUAL_INT(1, manifest_num_pending(&replayed));
 }
 
+static void test_heartbeat_is_appended_and_leaves_the_state_unchanged(void) {
+    write_known();
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_heartbeat(path));
+    TEST_ASSERT_EQUAL_INT(HEADER_BYTES + 6 * RECORD_BYTES, file_length());
+
+    manifest_t replayed;
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_open(&replayed, path));
+    assert_known(&replayed, false);
+    TEST_ASSERT_EQUAL_INT(HEADER_BYTES + 6 * RECORD_BYTES, file_length());
+
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_complete(&replayed, path));
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_open(&replayed, path));
+    assert_known(&replayed, true);
+}
+
 static void test_segment_filename(void) {
     char name[32];
     manifest_segment_filename(42, name, sizeof(name));
@@ -158,5 +173,6 @@ void run_manifest_tests(void) {
     RUN_MANIFEST_TEST(test_upload_of_an_unknown_segment_is_rejected);
     RUN_MANIFEST_TEST(test_next_upload_follows_the_journal);
     RUN_MANIFEST_TEST(test_pending_counts_closed_segments_not_uploaded);
+    RUN_MANIFEST_TEST(test_heartbeat_is_appended_and_leaves_the_state_unchanged);
     RUN_MANIFEST_TEST(test_segment_filename);
 }

@@ -11,6 +11,7 @@
 #define RECORD_SEGMENT_CLOSED 1
 #define RECORD_SEGMENT_UPLOADED 2
 #define RECORD_SESSION_COMPLETE 3
+#define RECORD_HEARTBEAT 4
 
 typedef struct __attribute__((packed)) {
     char magic[MANIFEST_MAGIC_LEN];
@@ -192,6 +193,16 @@ esp_err_t manifest_record_complete(manifest_t *manifest, const char *path) {
 
     apply_record(manifest, &record);
     return ESP_OK;
+}
+
+esp_err_t manifest_record_heartbeat(const char *path) {
+    manifest_record_t record = {
+        .type = RECORD_HEARTBEAT,
+        .index = 0,
+        .num_bytes = 0,
+    };
+
+    return append_record(path, &record);
 }
 
 int manifest_next_upload(const manifest_t *manifest) {

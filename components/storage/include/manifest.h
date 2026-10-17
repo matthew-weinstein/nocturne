@@ -26,6 +26,7 @@ esp_err_t manifest_open(manifest_t *manifest, const char *path);
 esp_err_t manifest_record_segment(manifest_t *manifest, const char *path, size_t num_bytes);
 esp_err_t manifest_record_upload(manifest_t *manifest, const char *path, int index);
 esp_err_t manifest_record_complete(manifest_t *manifest, const char *path);
+esp_err_t manifest_record_heartbeat(const char *path);
 int manifest_next_upload(const manifest_t *manifest);
 int manifest_num_pending(const manifest_t *manifest);
 void manifest_segment_filename(int index, char *out, size_t out_len);
