@@ -227,15 +227,34 @@ static void read_device_id(void) {
 }
 
 #if CONFIG_NOCTURNE_SYSTEM_CHECK
+_Static_assert(CONFIG_NOCTURNE_SYSTEM_CHECK_WIFI_OUTAGE_SECONDS < CONFIG_NOCTURNE_SYSTEM_CHECK_CAPTURE_SECONDS,
+               "the WiFi outage must end before the capture does");
+
+static void wait_until(TickType_t start, uint32_t ms) {
+    TickType_t wake = start;
+    xTaskDelayUntil(&wake, pdMS_TO_TICKS(ms));
+}
+
 static void run_system_check(void) {
     ESP_ERROR_CHECK(key_manager_wait_ready());
 
     uint32_t capture_ms = CONFIG_NOCTURNE_SYSTEM_CHECK_CAPTURE_SECONDS * 1000;
+    uint32_t outage_ms = CONFIG_NOCTURNE_SYSTEM_CHECK_WIFI_OUTAGE_SECONDS * 1000;
+    uint32_t health_check_ms = capture_ms / 2;
+    TickType_t start = xTaskGetTickCount();
 
     supervisor_post(SUPERVISOR_EVENT_SHORT_PRESS);
-    vTaskDelay(pdMS_TO_TICKS(capture_ms / 2));
+    if (outage_ms > 0) {
+        wait_until(start, health_check_ms - outage_ms / 2);
+        system_check_wifi_outage(true);
+    }
+    wait_until(start, health_check_ms);
     supervisor_post(SUPERVISOR_EVENT_SHORT_PRESS);
-    vTaskDelay(pdMS_TO_TICKS(capture_ms - capture_ms / 2));
+    if (outage_ms > 0) {
+        wait_until(start, health_check_ms + outage_ms / 2);
+        system_check_wifi_outage(false);
+    }
+    wait_until(start, capture_ms);
     supervisor_post(SUPERVISOR_EVENT_LONG_PRESS);
 
     vTaskDelay(pdMS_TO_TICKS(STATE_POLL_MS));
