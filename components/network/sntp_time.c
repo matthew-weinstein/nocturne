@@ -5,7 +5,10 @@
 #include <time.h>
 #include "esp_log.h"
 #include "esp_netif_sntp.h"
+#include "esp_system.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
 #include "nvs.h"
 #include "sdkconfig.h"
 #include "sntp_time_fallback.h"
@@ -13,9 +16,11 @@
 #define NVS_NAMESPACE   "time"
 #define NVS_KEY_UNIX    "last_unix"
 
+#define SYNCED_BIT BIT0
+
 static const char *TAG = "sntp_time";
 
-static volatile bool synced;
+static EventGroupHandle_t sync_events;
 
 static esp_err_t load_last_known(int64_t *out_unix) {
     nvs_handle_t handle;
@@ -67,7 +72,7 @@ static void restore_from_nvs(void) {
 }
 
 static void on_sync(struct timeval *tv) {
-    synced = true;
+    xEventGroupSetBits(sync_events, SYNCED_BIT);
 
     struct tm local;
     char text[32];
@@ -85,6 +90,11 @@ esp_err_t sntp_time_init(void) {
     setenv("TZ", CONFIG_NOCTURNE_TIMEZONE, 1);
     tzset();
 
+    sync_events = xEventGroupCreate();
+    if (sync_events == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
     restore_from_nvs();
 
     esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG(CONFIG_NOCTURNE_SNTP_SERVER);
@@ -94,5 +104,26 @@ esp_err_t sntp_time_init(void) {
 }
 
 bool sntp_time_is_reliable(void) {
-    return synced;
+    return sync_events != NULL && (xEventGroupGetBits(sync_events) & SYNCED_BIT) != 0;
+}
+
+esp_err_t sntp_time_wait_reliable(uint32_t timeout_ms) {
+    if (sync_events == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    EventBits_t bits = xEventGroupWaitBits(sync_events, SYNCED_BIT, pdFALSE, pdTRUE, pdMS_TO_TICKS(timeout_ms));
+    return (bits & SYNCED_BIT) ? ESP_OK : ESP_ERR_TIMEOUT;
+}
+
+bool sntp_time_survived_reset(void) {
+    switch (esp_reset_reason()) {
+    case ESP_RST_SW:
+    case ESP_RST_PANIC:
+    case ESP_RST_INT_WDT:
+    case ESP_RST_TASK_WDT:
+        return true;
+    default:
+        return false;
+    }
 }
