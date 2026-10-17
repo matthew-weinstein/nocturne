@@ -100,6 +100,28 @@ bool recovery_should_resume(const recovery_session_t *session, int64_t now_unix,
     return gap >= 0 && gap < window_seconds;
 }
 
+esp_err_t recovery_record_open_segment(manifest_t *manifest, const char *session_dir, int64_t *out_written_unix) {
+    char manifest_path[PATH_LEN];
+    snprintf(manifest_path, sizeof(manifest_path), "%s/manifest.bin", session_dir);
+
+    char filename[FILENAME_LEN];
+    manifest_segment_filename(manifest->num_segments, filename, sizeof(filename));
+
+    char segment_path[PATH_LEN];
+    snprintf(segment_path, sizeof(segment_path), "%s/%s", session_dir, filename);
+
+    struct stat info;
+    if (stat(segment_path, &info) != 0) {
+        return ESP_OK;
+    }
+
+    *out_written_unix = (int64_t)info.st_mtime;
+    if (info.st_size <= SEGMENT_FORMAT_HEADER_BYTES) {
+        return ESP_OK;
+    }
+    return manifest_record_segment(manifest, manifest_path, (size_t)info.st_size);
+}
+
 esp_err_t recovery_finish(const recovery_session_t *session, int64_t *out_ended_unix) {
     *out_ended_unix = session->last_written_unix;
 
@@ -111,21 +133,9 @@ esp_err_t recovery_finish(const recovery_session_t *session, int64_t *out_ended_
         return err;
     }
 
-    char filename[FILENAME_LEN];
-    manifest_segment_filename(manifest.num_segments, filename, sizeof(filename));
-
-    char segment_path[PATH_LEN];
-    snprintf(segment_path, sizeof(segment_path), "%s/%s", session->dir, filename);
-
-    struct stat info;
-    if (stat(segment_path, &info) == 0) {
-        *out_ended_unix = (int64_t)info.st_mtime;
-        if (info.st_size > SEGMENT_FORMAT_HEADER_BYTES) {
-            err = manifest_record_segment(&manifest, manifest_path, (size_t)info.st_size);
-            if (err != ESP_OK) {
-                return err;
-            }
-        }
+    err = recovery_record_open_segment(&manifest, session->dir, out_ended_unix);
+    if (err != ESP_OK) {
+        return err;
     }
 
     return manifest_record_complete(&manifest, manifest_path);

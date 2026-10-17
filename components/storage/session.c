@@ -11,6 +11,7 @@
 #include "aes_gcm.h"
 #include "key_manager.h"
 #include "manifest.h"
+#include "recovery.h"
 #include "sd_card.h"
 #include "segment_cursor.h"
 #include "segment_format.h"
@@ -22,7 +23,6 @@
 #define SEGMENT_SECONDS CONFIG_NOCTURNE_SEGMENT_SECONDS
 #define FRAMES_PER_SEGMENT ((SEGMENT_SECONDS * 1000) / AUDIO_FORMAT_FRAME_MS)
 
-#define SESSION_DIR_LEN 64
 #define PATH_LEN        128
 
 static manifest_t manifest;
@@ -174,6 +174,18 @@ esp_err_t session_resume(const char *existing_session_dir, session_segment_handl
     esp_err_t status = manifest_open(&manifest, manifest_path);
     if (status != ESP_OK) {
         return status;
+    }
+    if (manifest.complete) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    int64_t open_segment_written_unix = 0;
+    status = recovery_record_open_segment(&manifest, session_dir, &open_segment_written_unix);
+    if (status != ESP_OK) {
+        return status;
+    }
+    if (segment_closed != NULL) {
+        segment_closed(session_dir);
     }
 
     return open_segment();
