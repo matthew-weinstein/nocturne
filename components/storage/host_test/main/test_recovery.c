@@ -6,11 +6,13 @@
 #include <utime.h>
 #include "manifest.h"
 #include "recovery.h"
+#include "segment_format.h"
 #include "tests.h"
 #include "unity.h"
 
-#define STARTED_UNIX 1767225600
-#define PATH_LEN     128
+#define STARTED_UNIX   1767225600
+#define PATH_LEN       128
+#define WINDOW_SECONDS (15 * 60)
 
 static char root[64];
 static manifest_t manifest;
@@ -169,6 +171,120 @@ static void test_mtime_is_read_before_a_torn_tail_is_truncated(void) {
     TEST_ASSERT_EQUAL_INT64(STARTED_UNIX, scan.sessions[0].last_written_unix);
 }
 
+static void set_file_mtime(const char *path, int64_t unix_time) {
+    struct utimbuf times = { .actime = (time_t)unix_time, .modtime = (time_t)unix_time };
+    TEST_ASSERT_EQUAL_INT(0, utime(path, &times));
+}
+
+static void write_bytes(const char *path, size_t num_bytes) {
+    FILE *file = fopen(path, "wb");
+    TEST_ASSERT_NOT_NULL(file);
+    for (size_t i = 0; i < num_bytes; i++) {
+        fputc((int)(i & 0xff), file);
+    }
+    fclose(file);
+}
+
+static void scan_one(void) {
+    TEST_ASSERT_EQUAL(ESP_OK, recovery_scan(root, &scan));
+    TEST_ASSERT_EQUAL_INT(1, scan.num_incomplete);
+}
+
+static void replay(const char *name) {
+    char path[PATH_LEN];
+    session_path(name, "manifest.bin", path, sizeof(path));
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_open(&manifest, path));
+}
+
+static void test_a_session_written_within_the_window_is_resumed(void) {
+    recovery_session_t session = { .last_written_unix = STARTED_UNIX };
+
+    TEST_ASSERT_TRUE(recovery_should_resume(&session, STARTED_UNIX, true, WINDOW_SECONDS));
+    TEST_ASSERT_TRUE(recovery_should_resume(&session, STARTED_UNIX + WINDOW_SECONDS - 1, true, WINDOW_SECONDS));
+}
+
+static void test_a_session_at_or_past_the_window_is_finished(void) {
+    recovery_session_t session = { .last_written_unix = STARTED_UNIX };
+
+    TEST_ASSERT_FALSE(recovery_should_resume(&session, STARTED_UNIX + WINDOW_SECONDS, true, WINDOW_SECONDS));
+    TEST_ASSERT_FALSE(recovery_should_resume(&session, STARTED_UNIX + 86400, true, WINDOW_SECONDS));
+}
+
+static void test_unreliable_time_never_resumes(void) {
+    recovery_session_t session = { .last_written_unix = STARTED_UNIX };
+
+    TEST_ASSERT_FALSE(recovery_should_resume(&session, STARTED_UNIX + 60, false, WINDOW_SECONDS));
+}
+
+static void test_a_journal_written_in_the_future_is_finished(void) {
+    recovery_session_t session = { .last_written_unix = STARTED_UNIX };
+
+    TEST_ASSERT_FALSE(recovery_should_resume(&session, STARTED_UNIX - 1, true, WINDOW_SECONDS));
+}
+
+static void test_finish_records_the_open_segment_at_its_length(void) {
+    make_session("20260101_0000", 2, false, STARTED_UNIX + 600);
+
+    char path[PATH_LEN];
+    session_path("20260101_0000", "seg_0002.opus.enc", path, sizeof(path));
+    write_bytes(path, 5000);
+    set_file_mtime(path, STARTED_UNIX + 777);
+
+    scan_one();
+    int64_t ended_unix = 0;
+    TEST_ASSERT_EQUAL(ESP_OK, recovery_finish(&scan.sessions[0], &ended_unix));
+    TEST_ASSERT_EQUAL_INT64(STARTED_UNIX + 777, ended_unix);
+
+    replay("20260101_0000");
+    TEST_ASSERT_TRUE(manifest.complete);
+    TEST_ASSERT_EQUAL_INT(3, manifest.num_segments);
+    TEST_ASSERT_EQUAL_size_t(5000, manifest.segments[2].num_bytes);
+    TEST_ASSERT_FALSE(manifest.segments[2].uploaded);
+    TEST_ASSERT_EQUAL_INT(3, manifest_num_pending(&manifest));
+}
+
+static void test_finish_skips_an_open_segment_holding_only_its_header(void) {
+    make_session("20260101_0000", 2, false, STARTED_UNIX + 600);
+
+    char path[PATH_LEN];
+    session_path("20260101_0000", "seg_0002.opus.enc", path, sizeof(path));
+    write_bytes(path, SEGMENT_FORMAT_HEADER_BYTES);
+    set_file_mtime(path, STARTED_UNIX + 602);
+
+    scan_one();
+    int64_t ended_unix = 0;
+    TEST_ASSERT_EQUAL(ESP_OK, recovery_finish(&scan.sessions[0], &ended_unix));
+    TEST_ASSERT_EQUAL_INT64(STARTED_UNIX + 602, ended_unix);
+
+    replay("20260101_0000");
+    TEST_ASSERT_TRUE(manifest.complete);
+    TEST_ASSERT_EQUAL_INT(2, manifest.num_segments);
+}
+
+static void test_finish_without_an_open_segment_ends_at_the_journal_mtime(void) {
+    make_session("20260101_0000", 2, false, STARTED_UNIX + 600);
+
+    scan_one();
+    int64_t ended_unix = 0;
+    TEST_ASSERT_EQUAL(ESP_OK, recovery_finish(&scan.sessions[0], &ended_unix));
+    TEST_ASSERT_EQUAL_INT64(STARTED_UNIX + 600, ended_unix);
+
+    replay("20260101_0000");
+    TEST_ASSERT_TRUE(manifest.complete);
+    TEST_ASSERT_EQUAL_INT(2, manifest.num_segments);
+}
+
+static void test_a_finished_session_is_no_longer_listed(void) {
+    make_session("20260101_0000", 1, false, STARTED_UNIX);
+
+    scan_one();
+    int64_t ended_unix = 0;
+    TEST_ASSERT_EQUAL(ESP_OK, recovery_finish(&scan.sessions[0], &ended_unix));
+
+    TEST_ASSERT_EQUAL(ESP_OK, recovery_scan(root, &scan));
+    TEST_ASSERT_EQUAL_INT(0, scan.num_incomplete);
+}
+
 static void run(void (*test)(void), const char *name, int line) {
     snprintf(root, sizeof(root), "/tmp/nocturne_recovery_%d", (int)getpid());
     remove_tree(root);
@@ -187,4 +303,12 @@ void run_recovery_tests(void) {
     RUN_RECOVERY_TEST(test_sessions_are_listed_newest_first_by_journal_mtime);
     RUN_RECOVERY_TEST(test_beyond_the_limit_the_newest_are_kept_and_all_counted);
     RUN_RECOVERY_TEST(test_mtime_is_read_before_a_torn_tail_is_truncated);
+    RUN_RECOVERY_TEST(test_a_session_written_within_the_window_is_resumed);
+    RUN_RECOVERY_TEST(test_a_session_at_or_past_the_window_is_finished);
+    RUN_RECOVERY_TEST(test_unreliable_time_never_resumes);
+    RUN_RECOVERY_TEST(test_a_journal_written_in_the_future_is_finished);
+    RUN_RECOVERY_TEST(test_finish_records_the_open_segment_at_its_length);
+    RUN_RECOVERY_TEST(test_finish_skips_an_open_segment_holding_only_its_header);
+    RUN_RECOVERY_TEST(test_finish_without_an_open_segment_ends_at_the_journal_mtime);
+    RUN_RECOVERY_TEST(test_a_finished_session_is_no_longer_listed);
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 #include "esp_err.h"
 
@@ -20,3 +21,6 @@ typedef struct {
 
 esp_err_t recovery_scan(const char *sessions_dir, recovery_scan_t *scan);
 int recovery_num_listed(const recovery_scan_t *scan);
+bool recovery_should_resume(const recovery_session_t *session, int64_t now_unix, bool time_reliable,
+                            int64_t window_seconds);
+esp_err_t recovery_finish(const recovery_session_t *session, int64_t *out_ended_unix);

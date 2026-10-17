@@ -21,6 +21,7 @@ static const char expected[] =
     "  \"time_reliable\": true,\n"
     "  \"resumed\": false,\n"
     "  \"resume_count\": 0,\n"
+    "  \"recovered\": false,\n"
     "  \"health\": {\n"
     "    \"buffer_overflows\": 0,\n"
     "    \"sd_write_errors\": 0,\n"
@@ -67,6 +68,15 @@ static void test_resumed_follows_resume_count(void) {
     TEST_ASSERT_NOT_NULL(strstr(json, "\"resume_count\": 2,\n"));
 }
 
+static void test_a_recovered_session_is_flagged(void) {
+    session_json_t session = example_session();
+    session.recovered = true;
+    size_t num_bytes = 0;
+
+    TEST_ASSERT_EQUAL(ESP_OK, session_json_format(&session, json, sizeof(json), &num_bytes));
+    TEST_ASSERT_NOT_NULL(strstr(json, "\"resume_count\": 0,\n  \"recovered\": true,\n"));
+}
+
 static void test_large_and_negative_times_are_printed_whole(void) {
     session_json_t session = example_session();
     session.started_unix = -1;
@@ -106,6 +116,7 @@ void run_session_json_tests(void) {
     UnitySetTestFile(__FILE__);
     RUN_TEST(test_matches_the_design_doc_example);
     RUN_TEST(test_resumed_follows_resume_count);
+    RUN_TEST(test_a_recovered_session_is_flagged);
     RUN_TEST(test_large_and_negative_times_are_printed_whole);
     RUN_TEST(test_quotes_backslashes_and_control_characters_are_escaped);
     RUN_TEST(test_a_buffer_one_byte_short_is_rejected);

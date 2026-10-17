@@ -73,6 +73,7 @@ esp_err_t session_json_format(const session_json_t *session, char *out, size_t m
     append(&writer, "  \"time_reliable\": %s,\n", session->time_reliable ? "true" : "false");
     append(&writer, "  \"resumed\": %s,\n", session->resume_count > 0 ? "true" : "false");
     append(&writer, "  \"resume_count\": %d,\n", session->resume_count);
+    append(&writer, "  \"recovered\": %s,\n", session->recovered ? "true" : "false");
     append(&writer, "  \"health\": {\n");
     append(&writer, "    \"buffer_overflows\": %" PRIu32 ",\n", session->buffer_overflows);
     append(&writer, "    \"sd_write_errors\": %" PRIu32 ",\n", session->sd_write_errors);
