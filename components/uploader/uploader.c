@@ -8,6 +8,7 @@
 #include "b2_client.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "manifest.h"
@@ -25,6 +26,8 @@
 #define TASK_CORE        0
 #define QUEUE_DEPTH      4
 #define FINALIZE_SLOTS   1
+
+#define RUNNING_BIT BIT0
 
 static const char *TAG = "uploader";
 
@@ -46,12 +49,24 @@ static uploader_request_t request;
 static uploader_handler_t handler;
 static volatile bool finalizing;
 static char json[JSON_MAX_BYTES];
+static EventGroupHandle_t run_state;
 
 static portMUX_TYPE pending_lock = portMUX_INITIALIZER_UNLOCKED;
 static char pending_dir[SESSION_DIR_LEN];
 static int num_pending;
 
+static void wait_while_paused(void) {
+    if ((xEventGroupGetBits(run_state) & RUNNING_BIT) != 0) {
+        return;
+    }
+
+    ESP_LOGI(TAG, "paused for the recorder");
+    xEventGroupWaitBits(run_state, RUNNING_BIT, pdFALSE, pdTRUE, portMAX_DELAY);
+    ESP_LOGI(TAG, "resumed");
+}
+
 static esp_err_t upload_with_retry(const char *path, const char *object_name) {
+    wait_while_paused();
     esp_err_t err = b2_client_upload_file(path, object_name);
 
     for (size_t retry = 0; err != ESP_OK && retry < NUM_RETRIES; retry++) {
@@ -59,6 +74,7 @@ static esp_err_t upload_with_retry(const char *path, const char *object_name) {
                  retry_delays_ms[retry]);
         vTaskDelay(pdMS_TO_TICKS(retry_delays_ms[retry]));
         num_retries++;
+        wait_while_paused();
         err = b2_client_upload_file(path, object_name);
     }
     return err;
@@ -250,18 +266,30 @@ esp_err_t uploader_init(uploader_handler_t on_done) {
         return ESP_ERR_INVALID_STATE;
     }
 
+    run_state = xEventGroupCreate();
+    if (run_state == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    xEventGroupSetBits(run_state, RUNNING_BIT);
+
     requests = xQueueCreate(QUEUE_DEPTH, sizeof(uploader_request_t));
     if (requests == NULL) {
+        vEventGroupDelete(run_state);
+        run_state = NULL;
         return ESP_ERR_NO_MEM;
     }
 
     handler = on_done;
+    b2_client_set_block_hook(wait_while_paused);
 
     BaseType_t created = xTaskCreatePinnedToCore(uploader_task, "uploader", TASK_STACK_BYTES,
                                                  NULL, TASK_PRIORITY, NULL, TASK_CORE);
     if (created != pdPASS) {
+        b2_client_set_block_hook(NULL);
         vQueueDelete(requests);
         requests = NULL;
+        vEventGroupDelete(run_state);
+        run_state = NULL;
         return ESP_ERR_NO_MEM;
     }
     return ESP_OK;
@@ -304,6 +332,19 @@ esp_err_t uploader_finalize_session(const char *session_dir, const session_json_
         finalizing = false;
     }
     return err;
+}
+
+esp_err_t uploader_set_paused(bool paused) {
+    if (run_state == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (paused) {
+        xEventGroupClearBits(run_state, RUNNING_BIT);
+    } else {
+        xEventGroupSetBits(run_state, RUNNING_BIT);
+    }
+    return ESP_OK;
 }
 
 int uploader_pending_segments(const char *session_dir) {
