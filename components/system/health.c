@@ -17,5 +17,8 @@ uint32_t health_evaluate(const health_inputs_t *inputs) {
     if (inputs->silent_ms >= HEALTH_MAX_SILENT_MS) {
         problems |= HEALTH_PROBLEM_MIC_SILENT;
     }
+    if (inputs->upload_queue_depth >= HEALTH_MAX_UPLOAD_QUEUE_DEPTH && !inputs->wifi_reconnecting) {
+        problems |= HEALTH_PROBLEM_UPLOAD_BACKLOG;
+    }
     return problems;
 }

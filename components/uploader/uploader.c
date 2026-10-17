@@ -47,6 +47,10 @@ static uploader_handler_t handler;
 static volatile bool finalizing;
 static char json[JSON_MAX_BYTES];
 
+static portMUX_TYPE pending_lock = portMUX_INITIALIZER_UNLOCKED;
+static char pending_dir[SESSION_DIR_LEN];
+static int num_pending;
+
 static esp_err_t upload_with_retry(const char *path, const char *object_name) {
     esp_err_t err = b2_client_upload_file(path, object_name);
 
@@ -70,8 +74,18 @@ static esp_err_t open_journal(const char *session_dir, char *manifest_path, size
     return err;
 }
 
+static void publish_pending(const char *session_dir) {
+    int count = manifest_num_pending(&manifest);
+
+    taskENTER_CRITICAL(&pending_lock);
+    strlcpy(pending_dir, session_dir, sizeof(pending_dir));
+    num_pending = count;
+    taskEXIT_CRITICAL(&pending_lock);
+}
+
 static esp_err_t upload_segments(const char *session_dir, const char *manifest_path, int *out_num_uploaded) {
     *out_num_uploaded = 0;
+    publish_pending(session_dir);
 
     for (int index = manifest_next_upload(&manifest); index >= 0; index = manifest_next_upload(&manifest)) {
         if (!wifi_is_connected()) {
@@ -99,6 +113,7 @@ static esp_err_t upload_segments(const char *session_dir, const char *manifest_p
             return err;
         }
         (*out_num_uploaded)++;
+        publish_pending(session_dir);
     }
 
     ESP_LOGI(TAG, "%s: %d uploaded, none pending", manifest.session_id, *out_num_uploaded);
@@ -289,4 +304,11 @@ esp_err_t uploader_finalize_session(const char *session_dir, const session_json_
         finalizing = false;
     }
     return err;
+}
+
+int uploader_pending_segments(const char *session_dir) {
+    taskENTER_CRITICAL(&pending_lock);
+    int count = (strcmp(pending_dir, session_dir) == 0) ? num_pending : 0;
+    taskEXIT_CRITICAL(&pending_lock);
+    return count;
 }

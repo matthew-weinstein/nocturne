@@ -13,3 +13,4 @@ typedef void (*uploader_handler_t)(uploader_job_t job, esp_err_t result, int num
 esp_err_t uploader_init(uploader_handler_t on_done);
 esp_err_t uploader_upload_pending(const char *session_dir);
 esp_err_t uploader_finalize_session(const char *session_dir, const session_json_t *session);
+int uploader_pending_segments(const char *session_dir);
