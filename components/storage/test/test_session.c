@@ -113,7 +113,7 @@ static void remove_session(const char *dir) {
 TEST_CASE("a session rotates segments and every chunk opens", "[storage][sd]") {
     TEST_ASSERT_EQUAL(ESP_OK, sd_card_mount());
     TEST_ASSERT_EQUAL(ESP_OK, key_manager_init(TEST_PASSPHRASE));
-    TEST_ASSERT_EQUAL(ESP_OK, session_start());
+    TEST_ASSERT_EQUAL(ESP_OK, session_start(NULL));
 
     for (int frame = 0; frame < NUM_FRAMES; frame++) {
         build_packet(frame);

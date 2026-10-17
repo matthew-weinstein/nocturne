@@ -33,6 +33,7 @@ static StaticSemaphore_t pending_done_storage;
 static SemaphoreHandle_t pending_done;
 static esp_err_t pending_result;
 static int pending_num_uploaded;
+static int num_uploaded_while_recording;
 
 static uint32_t read_le32(const uint8_t *bytes) {
     return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8) | ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24);
@@ -263,6 +264,11 @@ static esp_err_t check_uploads(void) {
         return ESP_FAIL;
     }
 
+    if (num_uploaded_while_recording == 0) {
+        ESP_LOGE(TAG, "no segment was uploaded while recording");
+        return ESP_FAIL;
+    }
+
     pending_done = xSemaphoreCreateBinaryStatic(&pending_done_storage);
     if (uploader_upload_pending(session_dir) != ESP_OK) {
         ESP_LOGE(TAG, "second pass was not queued");
@@ -281,15 +287,19 @@ static esp_err_t check_uploads(void) {
 }
 
 void system_check_pending_done(esp_err_t result, int num_uploaded) {
+    if (pending_done == NULL) {
+        num_uploaded_while_recording += num_uploaded;
+        return;
+    }
+
     pending_result = result;
     pending_num_uploaded = num_uploaded;
-    if (pending_done != NULL) {
-        xSemaphoreGive(pending_done);
-    }
+    xSemaphoreGive(pending_done);
 }
 
 esp_err_t system_check_upload(void) {
     esp_err_t status = check_uploads();
-    printf("NCT_UPLOAD result=%s\n", status == ESP_OK ? "PASS" : "FAIL");
+    printf("NCT_UPLOAD result=%s while_recording=%d\n", status == ESP_OK ? "PASS" : "FAIL",
+           num_uploaded_while_recording);
     return status;
 }

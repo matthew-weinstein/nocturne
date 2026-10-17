@@ -31,6 +31,7 @@ static uint8_t packet[AUDIO_FORMAT_MAX_PACKET_BYTES];
 
 static TaskHandle_t task;
 static recorder_handler_t finished;
+static recorder_segment_handler_t segment_closed;
 static volatile bool recording;
 static volatile bool stop_requested;
 
@@ -136,7 +137,7 @@ static esp_err_t record_session(void) {
 
     status = audio_encoder_init();
     if (status == ESP_OK) {
-        status = session_start();
+        status = session_start(segment_closed);
     }
 
     if (status == ESP_OK) {
@@ -174,7 +175,7 @@ static void recorder_task(void *arg) {
     }
 }
 
-esp_err_t recorder_init(recorder_handler_t on_finished) {
+esp_err_t recorder_init(recorder_handler_t on_finished, recorder_segment_handler_t on_segment_closed) {
     if (task != NULL) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -185,6 +186,7 @@ esp_err_t recorder_init(recorder_handler_t on_finished) {
     }
 
     finished = on_finished;
+    segment_closed = on_segment_closed;
 
     BaseType_t created = xTaskCreatePinnedToCore(recorder_task, "recorder", TASK_STACK_BYTES,
                                                  NULL, TASK_PRIORITY, &task, TASK_CORE);

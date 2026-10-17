@@ -29,6 +29,7 @@
 static manifest_t manifest;
 static char session_dir[SESSION_DIR_LEN];
 static char manifest_path[PATH_LEN];
+static session_segment_handler_t segment_closed;
 
 static FILE *segment_file;
 static segment_cursor_t cursor;
@@ -122,7 +123,7 @@ static esp_err_t close_segment(void) {
     return manifest_record_segment(&manifest, manifest_path, bytes_in_segment);
 }
 
-esp_err_t session_start(void) {
+esp_err_t session_start(session_segment_handler_t on_segment_closed) {
     esp_err_t key_status = key_manager_wait_ready();
     if (key_status != ESP_OK) {
         return key_status;
@@ -151,6 +152,7 @@ esp_err_t session_start(void) {
     }
 
     snprintf(manifest_path, sizeof(manifest_path), "%s/manifest.bin", session_dir);
+    segment_closed = on_segment_closed;
 
     esp_err_t status = manifest_create(&manifest, manifest_path, session_id, (int64_t)now);
     if (status != ESP_OK) {
@@ -160,7 +162,7 @@ esp_err_t session_start(void) {
     return open_segment();
 }
 
-esp_err_t session_resume(const char *existing_session_dir) {
+esp_err_t session_resume(const char *existing_session_dir, session_segment_handler_t on_segment_closed) {
     esp_err_t key_status = key_manager_wait_ready();
     if (key_status != ESP_OK) {
         return key_status;
@@ -168,6 +170,7 @@ esp_err_t session_resume(const char *existing_session_dir) {
 
     snprintf(session_dir, sizeof(session_dir), "%s", existing_session_dir);
     snprintf(manifest_path, sizeof(manifest_path), "%s/manifest.bin", session_dir);
+    segment_closed = on_segment_closed;
 
     esp_err_t status = manifest_open(&manifest, manifest_path);
     if (status != ESP_OK) {
@@ -191,6 +194,9 @@ esp_err_t session_write_packet(const uint8_t *packet, size_t num_bytes) {
         status = close_segment();
         if (status != ESP_OK) {
             return status;
+        }
+        if (segment_closed != NULL) {
+            segment_closed(session_dir);
         }
         return open_segment();
     case SEGMENT_CURSOR_CONTINUE:
