@@ -3,6 +3,7 @@
 #include "button_fsm.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
+#include "esp_task_wdt.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -40,11 +41,14 @@ static void emit(button_event_t event) {
 static void hmi_task(void *arg) {
     (void)arg;
 
+    ESP_ERROR_CHECK(esp_task_wdt_add(NULL));
+
     button_fsm_t fsm = {0};
     TickType_t last_wake = xTaskGetTickCount();
 
     for (;;) {
         vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(BUTTON_FSM_POLL_MS));
+        esp_task_wdt_reset();
 
         button_event_t events[BUTTON_FSM_MAX_EVENTS];
         int num_events = button_fsm_step(&fsm, read_pressed(), events);

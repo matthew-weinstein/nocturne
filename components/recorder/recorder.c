@@ -9,6 +9,7 @@
 #include "audio_format.h"
 #include "backpressure.h"
 #include "esp_log.h"
+#include "esp_task_wdt.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -26,6 +27,8 @@
 #define TASK_STACK_BYTES 16384
 #define TASK_PRIORITY    20
 #define TASK_CORE        1
+
+#define WATCHDOG_FEED_MS 5000
 
 #define SILENCE_LOG_MS 30000
 
@@ -213,6 +216,8 @@ static esp_err_t capture(void) {
     encoded_samples = 0;
 
     while (!stop_requested && status == ESP_OK) {
+        esp_task_wdt_reset();
+
         size_t num_samples = 0;
         esp_err_t read_status = i2s_microphone_read(samples, BLOCK_SAMPLES, &num_samples);
         if (read_status != ESP_OK) {
@@ -302,11 +307,19 @@ static bool end_recording(void) {
     return stopped;
 }
 
+static void wait_for_notify(void) {
+    while (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(WATCHDOG_FEED_MS)) == 0) {
+        esp_task_wdt_reset();
+    }
+}
+
 static void recorder_task(void *arg) {
     (void)arg;
 
+    ESP_ERROR_CHECK(esp_task_wdt_add(NULL));
+
     for (;;) {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        wait_for_notify();
 
         bool session_closed = false;
         esp_err_t result = record_session(&session_closed);
@@ -316,7 +329,7 @@ static void recorder_task(void *arg) {
         }
 
         if (end_recording()) {
-            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+            wait_for_notify();
         }
 
         if (finished != NULL) {

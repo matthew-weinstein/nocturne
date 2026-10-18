@@ -40,6 +40,8 @@ menu "Nocturne"
             bool "One frame fails to encode"
         config NOCTURNE_SYSTEM_CHECK_FAULT_ENCODER_STALL
             bool "The encoder stalls for 1 s"
+        config NOCTURNE_SYSTEM_CHECK_FAULT_RECORDER_HANG
+            bool "The encoder never returns"
         config NOCTURNE_SYSTEM_CHECK_FAULT_UPLOAD_FAILING
             bool "Every upload fails"
         config NOCTURNE_SYSTEM_CHECK_FAULT_WIFI_DOWN_AT_START

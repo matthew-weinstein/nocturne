@@ -1,6 +1,7 @@
 #include "supervisor.h"
 #include <stddef.h>
 #include "esp_log.h"
+#include "esp_task_wdt.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -12,6 +13,8 @@
 #define TASK_STACK_BYTES 4096
 #define TASK_PRIORITY    15
 #define TASK_CORE        0
+
+#define WATCHDOG_FEED_MS 5000
 
 static const char *TAG = "supervisor";
 
@@ -92,10 +95,15 @@ static void handle_in_place(supervisor_state_t current, supervisor_event_t event
 static void supervisor_task(void *arg) {
     (void)arg;
 
+    ESP_ERROR_CHECK(esp_task_wdt_add(NULL));
+
     supervisor_event_t event;
 
     for (;;) {
-        xQueueReceive(events, &event, portMAX_DELAY);
+        esp_task_wdt_reset();
+        if (xQueueReceive(events, &event, pdMS_TO_TICKS(WATCHDOG_FEED_MS)) != pdTRUE) {
+            continue;
+        }
 
         supervisor_state_t current = state;
         if (refuse_for_room(current, event)) {

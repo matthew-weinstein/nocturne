@@ -23,6 +23,7 @@ typedef enum {
     FAULT_MIC_SILENT,
     FAULT_ENCODER_ERROR,
     FAULT_ENCODER_STALL,
+    FAULT_RECORDER_HANG,
     FAULT_UPLOAD_FAILING,
     FAULT_WIFI_DOWN_AT_START,
 } fault_t;
@@ -40,6 +41,8 @@ static const fault_t fault =
     FAULT_ENCODER_ERROR;
 #elif CONFIG_NOCTURNE_SYSTEM_CHECK_FAULT_ENCODER_STALL
     FAULT_ENCODER_STALL;
+#elif CONFIG_NOCTURNE_SYSTEM_CHECK_FAULT_RECORDER_HANG
+    FAULT_RECORDER_HANG;
 #elif CONFIG_NOCTURNE_SYSTEM_CHECK_FAULT_UPLOAD_FAILING
     FAULT_UPLOAD_FAILING;
 #elif CONFIG_NOCTURNE_SYSTEM_CHECK_FAULT_WIFI_DOWN_AT_START
@@ -87,6 +90,12 @@ esp_err_t __wrap_audio_encoder_encode_frame(const int16_t *pcm, uint8_t *out_byt
         if (fault == FAULT_ENCODER_ERROR) {
             announce("encoder error");
             return ESP_FAIL;
+        }
+        if (fault == FAULT_RECORDER_HANG) {
+            announce("recorder hang");
+            for (;;) {
+                vTaskDelay(portMAX_DELAY);
+            }
         }
         announce("encoder stall");
         vTaskDelay(pdMS_TO_TICKS(ENCODER_STALL_MS));
@@ -136,6 +145,7 @@ void system_check_fault_arm(void) {
         break;
     case FAULT_ENCODER_ERROR:
     case FAULT_ENCODER_STALL:
+    case FAULT_RECORDER_HANG:
         encoder_fault_left = true;
         break;
     default:

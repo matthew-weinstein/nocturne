@@ -9,6 +9,7 @@
 #include "b2_client.h"
 #include "cleanup.h"
 #include "esp_log.h"
+#include "esp_task_wdt.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/queue.h"
@@ -30,6 +31,8 @@
 #define TASK_CORE        0
 #define QUEUE_DEPTH      4
 #define FINALIZE_SLOTS   1
+
+#define WATCHDOG_FEED_MS 5000
 
 #define RUNNING_BIT BIT0
 
@@ -59,13 +62,20 @@ static portMUX_TYPE pending_lock = portMUX_INITIALIZER_UNLOCKED;
 static char pending_dir[SESSION_DIR_LEN];
 static int num_pending;
 
+static bool running(TickType_t timeout) {
+    return (xEventGroupWaitBits(run_state, RUNNING_BIT, pdFALSE, pdTRUE, timeout) & RUNNING_BIT) != 0;
+}
+
 static void wait_while_paused(void) {
-    if ((xEventGroupGetBits(run_state) & RUNNING_BIT) != 0) {
+    esp_task_wdt_reset();
+    if (running(0)) {
         return;
     }
 
     ESP_LOGI(TAG, "paused for the recorder");
-    xEventGroupWaitBits(run_state, RUNNING_BIT, pdFALSE, pdTRUE, portMAX_DELAY);
+    while (!running(pdMS_TO_TICKS(WATCHDOG_FEED_MS))) {
+        esp_task_wdt_reset();
+    }
     ESP_LOGI(TAG, "resumed");
 }
 
@@ -199,6 +209,7 @@ static esp_err_t finalize(const char *session_dir, session_json_t *metadata, int
     if (wifi_wait_connected(WIFI_TIMEOUT_MS) != ESP_OK) {
         ESP_LOGW(TAG, "no wifi after %d s", WIFI_TIMEOUT_MS / 1000);
     }
+    esp_task_wdt_reset();
 
     esp_err_t segments_err = upload_segments(session_dir, manifest_path, out_num_uploaded);
 
@@ -287,6 +298,7 @@ static void prepare_upload(void) {
         ESP_LOGW(TAG, "no wifi, b2 not ready");
         return;
     }
+    esp_task_wdt_reset();
 
     esp_err_t err = b2_client_get_upload_url();
     if (err != ESP_OK) {
@@ -297,10 +309,14 @@ static void prepare_upload(void) {
 static void uploader_task(void *arg) {
     (void)arg;
 
+    ESP_ERROR_CHECK(esp_task_wdt_add(NULL));
     prepare_upload();
 
     for (;;) {
-        xQueueReceive(requests, &request, portMAX_DELAY);
+        esp_task_wdt_reset();
+        if (xQueueReceive(requests, &request, pdMS_TO_TICKS(WATCHDOG_FEED_MS)) != pdTRUE) {
+            continue;
+        }
 
         if (request.job != UPLOADER_JOB_CLEANUP && strcmp(request.session_dir, retries_dir) != 0) {
             num_retries = 0;
