@@ -48,6 +48,26 @@ static void append_string(writer_t *writer, const char *name, const char *value)
     append(writer, "\",\n");
 }
 
+static void append_mutes(writer_t *writer, const session_json_t *session) {
+    if (session->num_mutes == 0) {
+        append(writer, "  \"muted\": [],\n");
+        return;
+    }
+
+    append(writer, "  \"muted\": [\n");
+    for (int i = 0; i < session->num_mutes; i++) {
+        const manifest_mute_t *mute = &session->mutes[i];
+        const char *separator = ",";
+        if (i == session->num_mutes - 1) {
+            separator = "";
+        }
+        append(writer, "    { \"segment\": %d, \"start_ms\": %" PRIu32 ", \"ms\": %" PRIu32 " }%s\n",
+               mute->segment, mute->start_frame * AUDIO_FORMAT_FRAME_MS, mute->num_frames * AUDIO_FORMAT_FRAME_MS,
+               separator);
+    }
+    append(writer, "  ],\n");
+}
+
 esp_err_t session_json_format(const session_json_t *session, char *out, size_t max_bytes, size_t *out_num_bytes) {
     *out_num_bytes = 0;
     if (max_bytes == 0) {
@@ -75,6 +95,8 @@ esp_err_t session_json_format(const session_json_t *session, char *out, size_t m
     append(&writer, "  \"resume_count\": %d,\n", session->resume_count);
     append(&writer, "  \"recovered\": %s,\n", session->recovered ? "true" : "false");
     append(&writer, "  \"muted_ms\": %" PRIu32 ",\n", session->muted_frames * AUDIO_FORMAT_FRAME_MS);
+    append_mutes(&writer, session);
+    append(&writer, "  \"muted_truncated\": %s,\n", session->mutes_truncated ? "true" : "false");
     append(&writer, "  \"health\": {\n");
     append(&writer, "    \"buffer_overflows\": %" PRIu32 ",\n", session->buffer_overflows);
     append(&writer, "    \"sd_write_errors\": %" PRIu32 ",\n", session->sd_write_errors);

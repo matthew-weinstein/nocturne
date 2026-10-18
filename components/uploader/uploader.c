@@ -20,7 +20,6 @@
 
 #define PATH_LEN        128
 #define FILENAME_LEN    32
-#define JSON_MAX_BYTES  1024
 
 #define WIFI_TIMEOUT_MS 30000
 
@@ -53,7 +52,7 @@ static QueueHandle_t requests;
 static uploader_request_t request;
 static uploader_handler_t handler;
 static volatile bool finalizing;
-static char json[JSON_MAX_BYTES];
+static char json[SESSION_JSON_MAX_BYTES];
 static EventGroupHandle_t run_state;
 
 static portMUX_TYPE pending_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -158,6 +157,9 @@ static esp_err_t write_session_json(const char *path, session_json_t *metadata) 
     metadata->segment_count = manifest.num_segments;
     metadata->resume_count = manifest.resume_count;
     metadata->muted_frames = manifest.muted_frames;
+    metadata->mutes = manifest.mutes;
+    metadata->num_mutes = manifest.num_mutes;
+    metadata->mutes_truncated = manifest.mutes_truncated;
     metadata->upload_retries = num_retries;
 
     size_t num_bytes = 0;
