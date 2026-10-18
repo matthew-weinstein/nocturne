@@ -32,6 +32,8 @@
 #include "uploader.h"
 
 #define STATE_POLL_MS        100
+#define CHECK_PRESS_MS       150
+#define CHECK_HOLD_MS        2000
 #define OTA_WIFI_TIMEOUT_MS  30000
 #define SNTP_TIMEOUT_MS      30000
 #define DEVICE_ID_LEN        13
@@ -146,6 +148,15 @@ static void do_ota(void)
 }
 
 static void on_button(button_event_t event) {
+    if (event == BUTTON_EVENT_DOWN) {
+        recorder_button_down();
+        return;
+    }
+    if (event == BUTTON_EVENT_UP) {
+        recorder_button_up();
+        return;
+    }
+
     static const supervisor_event_t events[] = {
         [BUTTON_EVENT_SHORT]     = SUPERVISOR_EVENT_SHORT_PRESS,
         [BUTTON_EVENT_LONG]      = SUPERVISOR_EVENT_LONG_PRESS,
@@ -383,6 +394,8 @@ static void read_device_id(void) {
 #if CONFIG_NOCTURNE_SYSTEM_CHECK
 _Static_assert(CONFIG_NOCTURNE_SYSTEM_CHECK_WIFI_OUTAGE_SECONDS < CONFIG_NOCTURNE_SYSTEM_CHECK_CAPTURE_SECONDS,
                "the WiFi outage must end before the capture does");
+_Static_assert(CONFIG_NOCTURNE_SYSTEM_CHECK_CAPTURE_SECONDS * 1000 / 2 > CHECK_HOLD_MS,
+               "the stop hold must start after the health check");
 
 static void wait_until(TickType_t start, uint32_t ms) {
     TickType_t wake = start;
@@ -407,12 +420,17 @@ static void run_system_check(void) {
     }
     wait_until(start, health_check_ms);
     if (supervisor_state() == SUPERVISOR_STATE_RECORDING) {
+        recorder_button_down();
+        vTaskDelay(pdMS_TO_TICKS(CHECK_PRESS_MS));
+        recorder_button_up();
         supervisor_post(SUPERVISOR_EVENT_SHORT_PRESS);
     }
     if (outage_ms > 0) {
         wait_until(start, health_check_ms + outage_ms / 2);
         system_check_wifi_outage(false);
     }
+    wait_until(start, capture_ms - CHECK_HOLD_MS);
+    recorder_button_down();
     wait_until(start, capture_ms);
     system_check_fault_before_stop();
     supervisor_post(SUPERVISOR_EVENT_LONG_PRESS);

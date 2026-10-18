@@ -18,6 +18,8 @@ static const char *const event_names[] = {
     [BUTTON_EVENT_SHORT]     = "short",
     [BUTTON_EVENT_LONG]      = "long",
     [BUTTON_EVENT_VERY_LONG] = "very long",
+    [BUTTON_EVENT_DOWN]      = "down",
+    [BUTTON_EVENT_UP]        = "up",
 };
 
 static button_handler_t handler;
@@ -27,7 +29,11 @@ static bool read_pressed(void) {
 }
 
 static void emit(button_event_t event) {
-    ESP_LOGI(TAG, "%s press", event_names[event]);
+    if (event == BUTTON_EVENT_DOWN || event == BUTTON_EVENT_UP) {
+        ESP_LOGD(TAG, "button %s", event_names[event]);
+    } else {
+        ESP_LOGI(TAG, "%s press", event_names[event]);
+    }
     handler(event);
 }
 
@@ -40,9 +46,10 @@ static void hmi_task(void *arg) {
     for (;;) {
         vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(BUTTON_FSM_POLL_MS));
 
-        button_event_t event;
-        if (button_fsm_step(&fsm, read_pressed(), &event)) {
-            emit(event);
+        button_event_t events[BUTTON_FSM_MAX_EVENTS];
+        int num_events = button_fsm_step(&fsm, read_pressed(), events);
+        for (int i = 0; i < num_events; i++) {
+            emit(events[i]);
         }
     }
 }

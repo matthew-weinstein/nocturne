@@ -202,6 +202,35 @@ static void test_a_new_journal_has_no_metadata_uploaded(void) {
     TEST_ASSERT_FALSE(manifest_fully_uploaded(&replayed));
 }
 
+static void test_muted_runs_are_summed_on_replay(void) {
+    write_known();
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_mute(&manifest, path, 1, 14000, 45));
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_mute(&manifest, path, 2, 0, MANIFEST_MAX_MUTED_RUN));
+    TEST_ASSERT_EQUAL_UINT32(45 + MANIFEST_MAX_MUTED_RUN, manifest.muted_frames);
+
+    manifest_t replayed;
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_open(&replayed, path));
+    assert_known(&replayed, false);
+    TEST_ASSERT_EQUAL_UINT32(45 + MANIFEST_MAX_MUTED_RUN, replayed.muted_frames);
+}
+
+static void test_a_new_journal_has_no_muted_frames(void) {
+    write_known();
+
+    manifest_t replayed;
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_open(&replayed, path));
+    TEST_ASSERT_EQUAL_UINT32(0, replayed.muted_frames);
+}
+
+static void test_a_muted_run_that_does_not_fit_is_rejected(void) {
+    write_known();
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, manifest_record_mute(&manifest, path, 0, 0, 0));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, manifest_record_mute(&manifest, path, 0, 0, MANIFEST_MAX_MUTED_RUN + 1));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, manifest_record_mute(&manifest, path, 0, MANIFEST_MAX_MUTE_START + 1, 1));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, manifest_record_mute(&manifest, path, -1, 0, 1));
+    TEST_ASSERT_EQUAL_INT(HEADER_BYTES + 5 * RECORD_BYTES, file_length());
+}
+
 static void test_append_to_a_missing_journal_creates_nothing(void) {
     TEST_ASSERT_EQUAL(ESP_ERR_NOT_FOUND, manifest_record_heartbeat(path));
     TEST_ASSERT_EQUAL(-1, access(path, F_OK));
@@ -240,6 +269,9 @@ void run_manifest_tests(void) {
     RUN_MANIFEST_TEST(test_a_new_journal_has_no_resumes);
     RUN_MANIFEST_TEST(test_fully_uploaded_needs_completion_every_segment_and_the_metadata);
     RUN_MANIFEST_TEST(test_a_new_journal_has_no_metadata_uploaded);
+    RUN_MANIFEST_TEST(test_muted_runs_are_summed_on_replay);
+    RUN_MANIFEST_TEST(test_a_new_journal_has_no_muted_frames);
+    RUN_MANIFEST_TEST(test_a_muted_run_that_does_not_fit_is_rejected);
     RUN_MANIFEST_TEST(test_append_to_a_missing_journal_creates_nothing);
     RUN_MANIFEST_TEST(test_a_journal_that_cannot_be_written_fails_after_its_retries);
     RUN_MANIFEST_TEST(test_segment_filename);

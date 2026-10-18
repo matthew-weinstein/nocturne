@@ -1,5 +1,6 @@
 #include "system_check.h"
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -222,7 +223,8 @@ static esp_err_t check_session(void) {
 
 esp_err_t system_check_session(void) {
     esp_err_t status = check_session();
-    printf("NCT_CHECK result=%s\n", status == ESP_OK ? "PASS" : "FAIL");
+    printf("NCT_CHECK result=%s muted_frames=%" PRIu32 "\n", status == ESP_OK ? "PASS" : "FAIL",
+           manifest.muted_frames);
     return status;
 }
 

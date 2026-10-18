@@ -25,6 +25,8 @@ WIFI_UP = "NCT_WIFI outage=end status=ESP_OK"
 FULL_SEGMENT_FRAMES = 500
 EXPECTED_FRAMES = 1750
 FRAME_TOLERANCE = 50
+EXPECTED_MUTED_FRAMES = 165
+MUTED_FRAME_TOLERANCE = 30
 
 PROBLEM_BUFFER_OVERFLOW = 0x08
 PROBLEM_MIC_SILENT = 0x10
@@ -83,6 +85,10 @@ def check_finished_capture(dut):
         fields = read_fields(dut, CHECK_LINE, CHECK_TIMEOUT_S)
 
     assert fields["result"] == "PASS"
+
+    muted_frames = int(fields["muted_frames"])
+    print(f"muted frames {muted_frames}")
+    assert abs(muted_frames - EXPECTED_MUTED_FRAMES) <= MUTED_FRAME_TOLERANCE
 
     print(f"segment frames {segment_frames}")
     for frames in segment_frames[:-1]:

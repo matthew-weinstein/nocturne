@@ -17,6 +17,7 @@
 #define RECORD_HEARTBEAT 4
 #define RECORD_SESSION_RESUMED 5
 #define RECORD_METADATA_UPLOADED 6
+#define RECORD_MUTED 7
 
 typedef struct __attribute__((packed)) {
     char magic[MANIFEST_MAGIC_LEN];
@@ -106,6 +107,9 @@ static void apply_record(manifest_t *manifest, const manifest_record_t *record) 
         break;
     case RECORD_METADATA_UPLOADED:
         manifest->metadata_uploaded = true;
+        break;
+    case RECORD_MUTED:
+        manifest->muted_frames += record->num_bytes >> MANIFEST_MUTE_START_BITS;
         break;
     default:
         break;
@@ -262,6 +266,28 @@ esp_err_t manifest_record_metadata_upload(manifest_t *manifest, const char *path
         .type = RECORD_METADATA_UPLOADED,
         .index = 0,
         .num_bytes = 0,
+    };
+
+    esp_err_t status = append_record(path, &record);
+    if (status != ESP_OK) {
+        return status;
+    }
+
+    apply_record(manifest, &record);
+    return ESP_OK;
+}
+
+esp_err_t manifest_record_mute(manifest_t *manifest, const char *path, int segment, uint32_t start_frame,
+                               uint32_t num_frames) {
+    if (segment < 0 || segment >= MANIFEST_MAX_SEGMENTS || start_frame > MANIFEST_MAX_MUTE_START
+        || num_frames == 0 || num_frames > MANIFEST_MAX_MUTED_RUN) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    manifest_record_t record = {
+        .type = RECORD_MUTED,
+        .index = (uint16_t)segment,
+        .num_bytes = start_frame | (num_frames << MANIFEST_MUTE_START_BITS),
     };
 
     esp_err_t status = append_record(path, &record);
