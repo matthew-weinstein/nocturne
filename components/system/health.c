@@ -14,6 +14,12 @@ uint32_t health_evaluate(const health_inputs_t *inputs) {
     if (inputs->overflow_count > 0) {
         problems |= HEALTH_PROBLEM_BUFFER_OVERFLOW;
     }
+    if (inputs->drop_count > 0) {
+        problems |= HEALTH_PROBLEM_AUDIO_DROPPED;
+    }
+    if (inputs->sd_write_errors > 0) {
+        problems |= HEALTH_PROBLEM_SD_WRITE_ERRORS;
+    }
     if (inputs->silent_ms >= HEALTH_MAX_SILENT_MS) {
         problems |= HEALTH_PROBLEM_MIC_SILENT;
     }

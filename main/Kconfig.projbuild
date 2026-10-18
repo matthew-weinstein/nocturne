@@ -16,4 +16,34 @@ menu "Nocturne"
         depends on NOCTURNE_SYSTEM_CHECK
         range 0 3600
 
+    choice NOCTURNE_SYSTEM_CHECK_FAULT
+        prompt "System-check fault to inject"
+        default NOCTURNE_SYSTEM_CHECK_FAULT_NONE
+        depends on NOCTURNE_SYSTEM_CHECK
+        help
+            One failure from the failure matrix, induced during the
+            system-check capture through link-time wrappers. Any fault but
+            none skips the session and upload checks; the system test reads
+            the response from the log.
+
+        config NOCTURNE_SYSTEM_CHECK_FAULT_NONE
+            bool "None"
+        config NOCTURNE_SYSTEM_CHECK_FAULT_CARD_FULL
+            bool "Card reads 3 % free"
+        config NOCTURNE_SYSTEM_CHECK_FAULT_SD_WRITE_GLITCH
+            bool "One card write fails"
+        config NOCTURNE_SYSTEM_CHECK_FAULT_SD_WRITE_ERROR
+            bool "A card write fails every retry"
+        config NOCTURNE_SYSTEM_CHECK_FAULT_MIC_SILENT
+            bool "Mic delivers only zeros"
+        config NOCTURNE_SYSTEM_CHECK_FAULT_ENCODER_ERROR
+            bool "One frame fails to encode"
+        config NOCTURNE_SYSTEM_CHECK_FAULT_ENCODER_STALL
+            bool "The encoder stalls for 1 s"
+        config NOCTURNE_SYSTEM_CHECK_FAULT_UPLOAD_FAILING
+            bool "Every upload fails"
+        config NOCTURNE_SYSTEM_CHECK_FAULT_WIFI_DOWN_AT_START
+            bool "WiFi down from before recording until the stop"
+    endchoice
+
 endmenu

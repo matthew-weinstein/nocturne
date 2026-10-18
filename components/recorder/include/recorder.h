@@ -4,13 +4,14 @@
 #include <stdint.h>
 #include "esp_err.h"
 
-typedef void (*recorder_handler_t)(esp_err_t result);
+typedef void (*recorder_handler_t)(esp_err_t result, bool session_closed);
 typedef void (*recorder_segment_handler_t)(const char *session_dir);
 typedef void (*recorder_backpressure_handler_t)(bool engaged);
 
 typedef struct {
     bool failed;
     uint32_t overflow_count;
+    uint32_t drop_count;
     uint32_t silent_ms;
 } recorder_stats_t;
 

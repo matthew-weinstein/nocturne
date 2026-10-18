@@ -14,6 +14,8 @@ typedef enum {
     HEALTH_PROBLEM_BUFFER_OVERFLOW = 1 << 3,
     HEALTH_PROBLEM_MIC_SILENT      = 1 << 4,
     HEALTH_PROBLEM_UPLOAD_BACKLOG  = 1 << 5,
+    HEALTH_PROBLEM_SD_WRITE_ERRORS = 1 << 6,
+    HEALTH_PROBLEM_AUDIO_DROPPED   = 1 << 7,
 } health_problem_t;
 
 typedef struct {
@@ -21,6 +23,8 @@ typedef struct {
     uint32_t free_space_pct;
     bool recorder_failed;
     uint32_t overflow_count;
+    uint32_t drop_count;
+    uint32_t sd_write_errors;
     uint32_t silent_ms;
     uint32_t upload_queue_depth;
     bool wifi_reconnecting;
