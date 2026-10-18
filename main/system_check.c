@@ -265,6 +265,11 @@ static esp_err_t check_uploads(void) {
         return ESP_FAIL;
     }
 
+    if (!manifest_fully_uploaded(&manifest)) {
+        ESP_LOGE(TAG, "finalize did not journal session.json as uploaded");
+        return ESP_FAIL;
+    }
+
     if (num_uploaded_while_recording == 0) {
         ESP_LOGE(TAG, "no segment was uploaded while recording");
         return ESP_FAIL;

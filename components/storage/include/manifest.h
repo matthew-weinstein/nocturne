@@ -19,6 +19,7 @@ typedef struct {
     int num_segments;
     bool complete;
     int resume_count;
+    bool metadata_uploaded;
     manifest_segment_t segments[MANIFEST_MAX_SEGMENTS];
 } manifest_t;
 
@@ -29,6 +30,8 @@ esp_err_t manifest_record_upload(manifest_t *manifest, const char *path, int ind
 esp_err_t manifest_record_complete(manifest_t *manifest, const char *path);
 esp_err_t manifest_record_heartbeat(const char *path);
 esp_err_t manifest_record_resume(manifest_t *manifest, const char *path);
+esp_err_t manifest_record_metadata_upload(manifest_t *manifest, const char *path);
 int manifest_next_upload(const manifest_t *manifest);
 int manifest_num_pending(const manifest_t *manifest);
+bool manifest_fully_uploaded(const manifest_t *manifest);
 void manifest_segment_filename(int index, char *out, size_t out_len);

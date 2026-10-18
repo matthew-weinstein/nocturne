@@ -175,6 +175,33 @@ static void test_a_new_journal_has_no_resumes(void) {
     TEST_ASSERT_EQUAL_INT(0, replayed.resume_count);
 }
 
+static void test_fully_uploaded_needs_completion_every_segment_and_the_metadata(void) {
+    write_known();
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_complete(&manifest, path));
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_metadata_upload(&manifest, path));
+    TEST_ASSERT_FALSE(manifest_fully_uploaded(&manifest));
+
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_upload(&manifest, path, 1));
+    TEST_ASSERT_TRUE(manifest_fully_uploaded(&manifest));
+    TEST_ASSERT_EQUAL_INT(HEADER_BYTES + 8 * RECORD_BYTES, file_length());
+
+    manifest_t replayed;
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_open(&replayed, path));
+    TEST_ASSERT_TRUE(replayed.metadata_uploaded);
+    TEST_ASSERT_TRUE(manifest_fully_uploaded(&replayed));
+}
+
+static void test_a_new_journal_has_no_metadata_uploaded(void) {
+    write_known();
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_upload(&manifest, path, 1));
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_complete(&manifest, path));
+
+    manifest_t replayed;
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_open(&replayed, path));
+    TEST_ASSERT_FALSE(replayed.metadata_uploaded);
+    TEST_ASSERT_FALSE(manifest_fully_uploaded(&replayed));
+}
+
 static void test_segment_filename(void) {
     char name[32];
     manifest_segment_filename(42, name, sizeof(name));
@@ -201,5 +228,7 @@ void run_manifest_tests(void) {
     RUN_MANIFEST_TEST(test_heartbeat_is_appended_and_leaves_the_state_unchanged);
     RUN_MANIFEST_TEST(test_resume_records_are_counted_on_replay);
     RUN_MANIFEST_TEST(test_a_new_journal_has_no_resumes);
+    RUN_MANIFEST_TEST(test_fully_uploaded_needs_completion_every_segment_and_the_metadata);
+    RUN_MANIFEST_TEST(test_a_new_journal_has_no_metadata_uploaded);
     RUN_MANIFEST_TEST(test_segment_filename);
 }
