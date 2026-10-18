@@ -27,7 +27,9 @@ typedef enum {
 
 typedef void (*supervisor_handler_t)(supervisor_state_t entered, supervisor_event_t event);
 typedef bool (*supervisor_health_check_t)(void);
+typedef bool (*supervisor_room_check_t)(void);
 
-esp_err_t supervisor_init(supervisor_handler_t on_transition, supervisor_health_check_t check_health);
+esp_err_t supervisor_init(supervisor_handler_t on_transition, supervisor_health_check_t check_health,
+                          supervisor_room_check_t check_room);
 esp_err_t supervisor_post(supervisor_event_t event);
 supervisor_state_t supervisor_state(void);

@@ -39,6 +39,7 @@ static const char *const event_names[] = {
 static QueueHandle_t events;
 static supervisor_handler_t transitioned;
 static supervisor_health_check_t health_check;
+static supervisor_room_check_t room_check;
 static volatile supervisor_state_t state = SUPERVISOR_STATE_BOOT;
 
 static void show(const led_pattern_t *pattern, const char *what) {
@@ -60,6 +61,17 @@ static void run_health_check(void) {
 
     led_pattern_t pattern = supervisor_logic_led_for_health(healthy);
     show(&pattern, "health check");
+}
+
+static bool refuse_for_room(supervisor_state_t current, supervisor_event_t event) {
+    if (!supervisor_logic_needs_room(current, event) || room_check == NULL || room_check()) {
+        return false;
+    }
+
+    ESP_LOGW(TAG, "%s refused in %s: card full", event_names[event], state_names[current]);
+    led_pattern_t pattern = supervisor_logic_led_for_health(false);
+    show(&pattern, "card full");
+    return true;
 }
 
 static void handle_in_place(supervisor_state_t current, supervisor_event_t event) {
@@ -85,6 +97,10 @@ static void supervisor_task(void *arg) {
         xQueueReceive(events, &event, portMAX_DELAY);
 
         supervisor_state_t current = state;
+        if (refuse_for_room(current, event)) {
+            continue;
+        }
+
         supervisor_state_t next = supervisor_logic_next_state(current, event);
 
         if (next == current) {
@@ -106,13 +122,15 @@ static void supervisor_task(void *arg) {
     }
 }
 
-esp_err_t supervisor_init(supervisor_handler_t on_transition, supervisor_health_check_t check_health) {
+esp_err_t supervisor_init(supervisor_handler_t on_transition, supervisor_health_check_t check_health,
+                          supervisor_room_check_t check_room) {
     if (events != NULL) {
         return ESP_ERR_INVALID_STATE;
     }
 
     transitioned = on_transition;
     health_check = check_health;
+    room_check = check_room;
 
     events = xQueueCreate(QUEUE_LENGTH, sizeof(supervisor_event_t));
     if (events == NULL) {

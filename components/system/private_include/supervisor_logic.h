@@ -12,5 +12,6 @@ typedef enum {
 
 supervisor_state_t supervisor_logic_next_state(supervisor_state_t current, supervisor_event_t event);
 supervisor_logic_action_t supervisor_logic_action_for(supervisor_state_t current, supervisor_event_t event);
+bool supervisor_logic_needs_room(supervisor_state_t current, supervisor_event_t event);
 bool supervisor_logic_led_for(supervisor_state_t entered, supervisor_event_t event, led_pattern_t *out_pattern);
 led_pattern_t supervisor_logic_led_for_health(bool healthy);

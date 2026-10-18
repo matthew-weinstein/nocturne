@@ -208,6 +208,17 @@ static bool check_health(void) {
     return problems == 0;
 }
 
+static bool card_has_room(void) {
+    uint32_t free_pct;
+    return sd_card_free_pct(&free_pct) != ESP_OK || !cleanup_card_full(free_pct);
+}
+
+static void clean_up(void) {
+    if (CLEANUP_ENABLED) {
+        uploader_clean_up();
+    }
+}
+
 static void on_segment_closed(const char *session_dir) {
     uploader_upload_pending(session_dir);
 }
@@ -413,7 +424,7 @@ void app_main(void)
     ESP_ERROR_CHECK(key_manager_init(NOCTURNE_PASSPHRASE));
     read_device_id();
     ESP_ERROR_CHECK(led_init());
-    ESP_ERROR_CHECK(supervisor_init(on_transition, check_health));
+    ESP_ERROR_CHECK(supervisor_init(on_transition, check_health, card_has_room));
     ESP_ERROR_CHECK(button_init(on_button));
 
     const esp_app_desc_t *app_desc = esp_app_get_description();

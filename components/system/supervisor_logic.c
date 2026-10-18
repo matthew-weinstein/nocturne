@@ -53,6 +53,10 @@ supervisor_logic_action_t supervisor_logic_action_for(supervisor_state_t current
     return SUPERVISOR_LOGIC_ACTION_NONE;
 }
 
+bool supervisor_logic_needs_room(supervisor_state_t current, supervisor_event_t event) {
+    return current == SUPERVISOR_STATE_IDLE && event == SUPERVISOR_EVENT_SHORT_PRESS;
+}
+
 bool supervisor_logic_led_for(supervisor_state_t entered, supervisor_event_t event, led_pattern_t *out_pattern) {
     switch (entered) {
     case SUPERVISOR_STATE_IDLE:
