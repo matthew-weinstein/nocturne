@@ -3,7 +3,10 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
+
+#include "sd_card.h"
 
 #define MANIFEST_MAGIC "NCT1"
 #define MANIFEST_MAGIC_LEN 4
@@ -33,25 +36,50 @@ void manifest_segment_filename(int index, char *out, size_t out_len) {
     snprintf(out, out_len, "seg_%04d.opus.enc", index);
 }
 
-static esp_err_t write_journal(const char *path, const char *mode, const void *data, size_t num_bytes) {
-    pthread_mutex_lock(&journal_lock);
-
+static bool write_file(const char *path, const char *mode, const void *data, size_t num_bytes) {
     FILE *file = fopen(path, mode);
     if (file == NULL) {
-        pthread_mutex_unlock(&journal_lock);
-        return ESP_FAIL;
+        return false;
     }
 
-    size_t written = fwrite(data, num_bytes, 1, file);
-    fflush(file);
-    fclose(file);
+    bool written = fwrite(data, num_bytes, 1, file) == 1;
+    written = fflush(file) == 0 && written;
+    return fclose(file) == 0 && written;
+}
+
+static esp_err_t write_journal(const char *path, bool append, const void *data, size_t num_bytes) {
+    pthread_mutex_lock(&journal_lock);
+
+    off_t length = 0;
+    if (append) {
+        struct stat info;
+        if (stat(path, &info) != 0) {
+            pthread_mutex_unlock(&journal_lock);
+            return ESP_ERR_NOT_FOUND;
+        }
+        length = info.st_size;
+    }
+
+    esp_err_t status = ESP_FAIL;
+    for (int attempt = 0; attempt <= SD_CARD_WRITE_RETRIES; attempt++) {
+        if (attempt > 0) {
+            usleep(SD_CARD_RETRY_DELAY_US);
+            if (append && truncate(path, length) != 0) {
+                continue;
+            }
+        }
+        if (write_file(path, append ? "ab" : "wb", data, num_bytes)) {
+            status = ESP_OK;
+            break;
+        }
+    }
 
     pthread_mutex_unlock(&journal_lock);
-    return (written == 1) ? ESP_OK : ESP_FAIL;
+    return status;
 }
 
 static esp_err_t append_record(const char *path, const manifest_record_t *record) {
-    return write_journal(path, "ab", record, sizeof(*record));
+    return write_journal(path, true, record, sizeof(*record));
 }
 
 static void apply_record(manifest_t *manifest, const manifest_record_t *record) {
@@ -95,7 +123,7 @@ esp_err_t manifest_create(manifest_t *manifest, const char *path, const char *se
     strncpy(header.session_id, session_id, MANIFEST_SESSION_ID_LEN - 1);
     header.started_unix = started_unix;
 
-    return write_journal(path, "wb", &header, sizeof(header));
+    return write_journal(path, false, &header, sizeof(header));
 }
 
 static esp_err_t replay(manifest_t *manifest, const char *path) {
