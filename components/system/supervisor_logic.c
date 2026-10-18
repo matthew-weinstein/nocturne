@@ -20,7 +20,7 @@ supervisor_state_t supervisor_logic_next_state(supervisor_state_t current, super
         }
         break;
     case SUPERVISOR_STATE_RECORDING:
-        if (event == SUPERVISOR_EVENT_LONG_PRESS) {
+        if (event == SUPERVISOR_EVENT_LONG_PRESS || event == SUPERVISOR_EVENT_RECORDING_FAILED) {
             return SUPERVISOR_STATE_FINALIZING;
         }
         break;

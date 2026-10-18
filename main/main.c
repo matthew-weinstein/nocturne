@@ -20,6 +20,7 @@
 #include "recorder.h"
 #include "sdkconfig.h"
 #include "system_check.h"
+#include "system_check_fault.h"
 #include "key_manager.h"
 #include "led.h"
 #include "button.h"
@@ -55,6 +56,7 @@ static const char *TAG = "nocturne";
 
 static char device_id[DEVICE_ID_LEN];
 static bool session_time_reliable;
+static volatile bool session_failed;
 static uint32_t session_wifi_disconnects_at_start;
 
 typedef struct {
@@ -176,7 +178,7 @@ static void on_transition(supervisor_state_t entered, supervisor_event_t event) 
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "recording did not start: %s", esp_err_to_name(err));
         }
-    } else if (entered == SUPERVISOR_STATE_FINALIZING) {
+    } else if (entered == SUPERVISOR_STATE_FINALIZING && event != SUPERVISOR_EVENT_RECORDING_FAILED) {
         esp_err_t err = recorder_stop();
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "recording did not stop: %s", esp_err_to_name(err));
@@ -192,6 +194,8 @@ static bool check_health(void) {
     health_inputs_t inputs = {
         .recorder_failed = stats.failed,
         .overflow_count = stats.overflow_count,
+        .drop_count = stats.drop_count,
+        .sd_write_errors = session_write_error_count(),
         .silent_ms = stats.silent_ms,
     };
     inputs.sd_mounted = sd_card_free_pct(&inputs.free_space_pct) == ESP_OK;
@@ -199,11 +203,11 @@ static bool check_health(void) {
     inputs.wifi_reconnecting = !wifi_is_connected();
 
     uint32_t problems = health_evaluate(&inputs);
-    ESP_LOGI(TAG, "health: sd %s, free %" PRIu32 "%%, recorder %s, overflows %" PRIu32
-             ", silent %" PRIu32 " ms, upload queue %" PRIu32 ", wifi %s, problems 0x%02" PRIx32,
-             inputs.sd_mounted ? "ok" : "missing", inputs.free_space_pct,
-             inputs.recorder_failed ? "failed" : "ok", inputs.overflow_count,
-             inputs.silent_ms, inputs.upload_queue_depth,
+    ESP_LOGI(TAG, "health: sd %s, free %" PRIu32 "%%, recorder %s, overflows %" PRIu32 ", drops %" PRIu32
+             ", write errors %" PRIu32 ", silent %" PRIu32 " ms, upload queue %" PRIu32 ", wifi %s, problems 0x%02"
+             PRIx32, inputs.sd_mounted ? "ok" : "missing", inputs.free_space_pct,
+             inputs.recorder_failed ? "failed" : "ok", inputs.overflow_count, inputs.drop_count,
+             inputs.sd_write_errors, inputs.silent_ms, inputs.upload_queue_depth,
              inputs.wifi_reconnecting ? "reconnecting" : "up", problems);
     return problems == 0;
 }
@@ -237,8 +241,12 @@ static session_json_t device_metadata(void) {
     return metadata;
 }
 
-static void on_recording_finished(esp_err_t result) {
-    if (result != ESP_OK) {
+static void on_recording_finished(esp_err_t result, bool session_closed) {
+    session_failed = result != ESP_OK;
+    if (session_failed) {
+        supervisor_post(SUPERVISOR_EVENT_RECORDING_FAILED);
+    }
+    if (!session_closed) {
         supervisor_post(SUPERVISOR_EVENT_FINALIZE_FAILED);
         return;
     }
@@ -250,6 +258,7 @@ static void on_recording_finished(esp_err_t result) {
     metadata.ended_unix = (int64_t)time(NULL);
     metadata.time_reliable = session_time_reliable;
     metadata.buffer_overflows = stats.overflow_count;
+    metadata.sd_write_errors = session_write_error_count();
     metadata.wifi_disconnects = wifi_disconnect_count() - session_wifi_disconnects_at_start;
 
     esp_err_t err = uploader_finalize_session(session_current_dir(), &metadata);
@@ -287,7 +296,8 @@ static void on_upload_done(uploader_job_t job, esp_err_t result, int num_done) {
     upload_next_finished_session();
 
     if (job == UPLOADER_JOB_FINALIZE) {
-        supervisor_post(result == ESP_OK ? SUPERVISOR_EVENT_FINALIZE_OK : SUPERVISOR_EVENT_FINALIZE_FAILED);
+        bool ok = result == ESP_OK && !session_failed;
+        supervisor_post(ok ? SUPERVISOR_EVENT_FINALIZE_OK : SUPERVISOR_EVENT_FINALIZE_FAILED);
         return;
     }
     if (job != UPLOADER_JOB_PENDING) {
@@ -387,18 +397,24 @@ static void run_system_check(void) {
     uint32_t health_check_ms = capture_ms / 2;
     TickType_t start = xTaskGetTickCount();
 
+    system_check_fault_before_start();
     supervisor_post(SUPERVISOR_EVENT_SHORT_PRESS);
+    wait_until(start, capture_ms / 4);
+    system_check_fault_arm();
     if (outage_ms > 0) {
         wait_until(start, health_check_ms - outage_ms / 2);
         system_check_wifi_outage(true);
     }
     wait_until(start, health_check_ms);
-    supervisor_post(SUPERVISOR_EVENT_SHORT_PRESS);
+    if (supervisor_state() == SUPERVISOR_STATE_RECORDING) {
+        supervisor_post(SUPERVISOR_EVENT_SHORT_PRESS);
+    }
     if (outage_ms > 0) {
         wait_until(start, health_check_ms + outage_ms / 2);
         system_check_wifi_outage(false);
     }
     wait_until(start, capture_ms);
+    system_check_fault_before_stop();
     supervisor_post(SUPERVISOR_EVENT_LONG_PRESS);
 
     vTaskDelay(pdMS_TO_TICKS(STATE_POLL_MS));
@@ -406,7 +422,12 @@ static void run_system_check(void) {
         vTaskDelay(pdMS_TO_TICKS(STATE_POLL_MS));
     }
 
+    if (system_check_fault_injected()) {
+        printf("NCT_FAULT done\n");
+        return;
+    }
     system_check_session();
+    system_check_upload();
 }
 #endif
 
@@ -460,6 +481,5 @@ void app_main(void)
 
 #if CONFIG_NOCTURNE_SYSTEM_CHECK
     run_system_check();
-    system_check_upload();
 #endif
 }

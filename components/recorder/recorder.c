@@ -24,6 +24,8 @@
 #define TASK_PRIORITY    20
 #define TASK_CORE        1
 
+#define SILENCE_LOG_MS 30000
+
 static const char *TAG = "recorder";
 
 static int32_t samples[BLOCK_SAMPLES];
@@ -37,12 +39,15 @@ static recorder_segment_handler_t segment_closed;
 static recorder_backpressure_handler_t backpressure_changed;
 static bool backpressure_engaged;
 static char resume_dir[SESSION_DIR_LEN];
-static volatile bool recording;
+
+static portMUX_TYPE state_lock = portMUX_INITIALIZER_UNLOCKED;
+static bool recording;
 static volatile bool stop_requested;
 
 static portMUX_TYPE stats_lock = portMUX_INITIALIZER_UNLOCKED;
 static bool failed;
 static uint32_t overflow_count;
+static uint32_t drop_count;
 static int64_t last_sound_us;
 
 static bool has_sound(const int16_t *block, size_t num_samples) {
@@ -54,14 +59,18 @@ static bool has_sound(const int16_t *block, size_t num_samples) {
     return false;
 }
 
-static void record_block(bool overflowed, bool heard) {
+static void record_block(uint32_t num_overflows, bool heard) {
     taskENTER_CRITICAL(&stats_lock);
-    if (overflowed) {
-        overflow_count++;
-    }
+    overflow_count += num_overflows;
     if (heard) {
         last_sound_us = esp_timer_get_time();
     }
+    taskEXIT_CRITICAL(&stats_lock);
+}
+
+static void record_drop(void) {
+    taskENTER_CRITICAL(&stats_lock);
+    drop_count++;
     taskEXIT_CRITICAL(&stats_lock);
 }
 
@@ -69,6 +78,7 @@ static void reset_stats(void) {
     taskENTER_CRITICAL(&stats_lock);
     failed = false;
     overflow_count = 0;
+    drop_count = 0;
     last_sound_us = esp_timer_get_time();
     taskEXIT_CRITICAL(&stats_lock);
 }
@@ -99,7 +109,9 @@ static esp_err_t encode_available(void) {
         size_t num_bytes = 0;
         status = audio_encoder_encode_frame(frame, packet, sizeof(packet), &num_bytes);
         if (status != ESP_OK) {
-            return status;
+            ESP_LOGW(TAG, "encoder failed (%s), frame dropped", esp_err_to_name(status));
+            record_drop();
+            continue;
         }
 
         status = session_write_packet(packet, num_bytes);
@@ -110,26 +122,61 @@ static esp_err_t encode_available(void) {
     return ESP_OK;
 }
 
+static uint32_t count_overflows(bool ring_overflowed, uint32_t *mic_overflows_seen) {
+    uint32_t mic_overflows = i2s_microphone_overflow_count();
+    uint32_t num_overflows = mic_overflows - *mic_overflows_seen;
+    *mic_overflows_seen = mic_overflows;
+
+    if (ring_overflowed) {
+        num_overflows++;
+    }
+    if (num_overflows > 0) {
+        ESP_LOGW(TAG, "recorder fell behind, %" PRIu32 " overflows, audio dropped", num_overflows);
+    }
+    return num_overflows;
+}
+
+static void log_silence(bool *silence_logged) {
+    recorder_stats_t stats;
+    recorder_get_stats(&stats);
+
+    if (stats.silent_ms >= SILENCE_LOG_MS && !*silence_logged) {
+        ESP_LOGW(TAG, "mic silent for %" PRIu32 " s", stats.silent_ms / 1000);
+        *silence_logged = true;
+    } else if (stats.silent_ms < SILENCE_LOG_MS && *silence_logged) {
+        ESP_LOGI(TAG, "mic heard again");
+        *silence_logged = false;
+    }
+}
+
 static esp_err_t capture(void) {
     uint32_t captured = 0;
     size_t max_occupancy = 0;
     uint32_t num_overflows = 0;
     uint32_t num_engaged = 0;
+    uint32_t mic_overflows_seen = 0;
+    bool silence_logged = false;
     esp_err_t status = ESP_OK;
 
     while (!stop_requested && status == ESP_OK) {
         size_t num_samples = 0;
-        if (i2s_microphone_read(samples, BLOCK_SAMPLES, &num_samples) != ESP_OK) {
+        esp_err_t read_status = i2s_microphone_read(samples, BLOCK_SAMPLES, &num_samples);
+        if (read_status != ESP_OK) {
+            ESP_LOGW(TAG, "mic read failed (%s), block dropped", esp_err_to_name(read_status));
+            record_drop();
             continue;
         }
 
         pcm_convert_from_i2s(samples, pcm, num_samples);
-
-        bool overflowed = ring_buffer_write(pcm, num_samples) != ESP_OK;
-        if (overflowed) {
-            num_overflows++;
+        if (captured == 0) {
+            mic_overflows_seen = i2s_microphone_overflow_count();
         }
-        record_block(overflowed, has_sound(pcm, num_samples));
+
+        bool ring_overflowed = ring_buffer_write(pcm, num_samples) != ESP_OK;
+        uint32_t block_overflows = count_overflows(ring_overflowed, &mic_overflows_seen);
+        num_overflows += block_overflows;
+        record_block(block_overflows, has_sound(pcm, num_samples));
+        log_silence(&silence_logged);
         captured += num_samples;
 
         size_t occupancy = ring_buffer_available();
@@ -148,12 +195,14 @@ static esp_err_t capture(void) {
 
     set_backpressure(false);
 
-    ESP_LOGI(TAG, "captured %" PRIu32 " samples, peak occupancy %u, overflows %u, uploads paused %" PRIu32 " times",
-             captured, (unsigned)max_occupancy, (unsigned)num_overflows, num_engaged);
+    ESP_LOGI(TAG, "captured %" PRIu32 " samples, peak occupancy %u, overflows %" PRIu32 ", uploads paused %" PRIu32
+             " times", captured, (unsigned)max_occupancy, num_overflows, num_engaged);
     return status;
 }
 
-static esp_err_t record_session(void) {
+static esp_err_t record_session(bool *out_session_closed) {
+    *out_session_closed = false;
+
     esp_err_t status = ring_buffer_init(RING_CAPACITY_SAMPLES);
     if (status != ESP_OK) {
         return status;
@@ -172,6 +221,7 @@ static esp_err_t record_session(void) {
         status = capture();
 
         esp_err_t finish_status = session_finish();
+        *out_session_closed = finish_status == ESP_OK;
         if (status == ESP_OK) {
             status = finish_status;
         }
@@ -182,23 +232,33 @@ static esp_err_t record_session(void) {
     return status;
 }
 
+static bool end_recording(void) {
+    taskENTER_CRITICAL(&state_lock);
+    bool stopped = stop_requested;
+    recording = false;
+    taskEXIT_CRITICAL(&state_lock);
+    return stopped;
+}
+
 static void recorder_task(void *arg) {
     (void)arg;
 
     for (;;) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-        esp_err_t result = record_session();
+        bool session_closed = false;
+        esp_err_t result = record_session(&session_closed);
         if (result != ESP_OK) {
             ESP_LOGE(TAG, "recording failed: %s", esp_err_to_name(result));
             mark_failed();
         }
 
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        if (end_recording()) {
+            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        }
 
-        recording = false;
         if (finished != NULL) {
-            finished(result);
+            finished(result, session_closed);
         }
     }
 }
@@ -228,14 +288,19 @@ esp_err_t recorder_init(recorder_handler_t on_finished, recorder_segment_handler
 }
 
 static esp_err_t begin(const char *session_dir) {
-    if (task == NULL || recording) {
+    taskENTER_CRITICAL(&state_lock);
+    bool idle = task != NULL && !recording;
+    if (idle) {
+        recording = true;
+    }
+    taskEXIT_CRITICAL(&state_lock);
+    if (!idle) {
         return ESP_ERR_INVALID_STATE;
     }
 
     snprintf(resume_dir, sizeof(resume_dir), "%s", session_dir);
     reset_stats();
     stop_requested = false;
-    recording = true;
     xTaskNotifyGive(task);
     return ESP_OK;
 }
@@ -252,11 +317,16 @@ esp_err_t recorder_resume(const char *session_dir) {
 }
 
 esp_err_t recorder_stop(void) {
-    if (task == NULL || !recording || stop_requested) {
+    taskENTER_CRITICAL(&state_lock);
+    bool stoppable = task != NULL && recording && !stop_requested;
+    if (stoppable) {
+        stop_requested = true;
+    }
+    taskEXIT_CRITICAL(&state_lock);
+    if (!stoppable) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    stop_requested = true;
     xTaskNotifyGive(task);
     return ESP_OK;
 }
@@ -265,6 +335,7 @@ void recorder_get_stats(recorder_stats_t *out_stats) {
     taskENTER_CRITICAL(&stats_lock);
     out_stats->failed = failed;
     out_stats->overflow_count = overflow_count;
+    out_stats->drop_count = drop_count;
     out_stats->silent_ms = (uint32_t)((esp_timer_get_time() - last_sound_us) / 1000);
     taskEXIT_CRITICAL(&stats_lock);
 }

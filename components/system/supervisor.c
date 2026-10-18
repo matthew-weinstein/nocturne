@@ -25,15 +25,16 @@ static const char *const state_names[] = {
 };
 
 static const char *const event_names[] = {
-    [SUPERVISOR_EVENT_BOOT_DONE]       = "boot done",
-    [SUPERVISOR_EVENT_RESUME_FOUND]    = "resume found",
-    [SUPERVISOR_EVENT_RESUMED]         = "resumed",
-    [SUPERVISOR_EVENT_SHORT_PRESS]     = "short press",
-    [SUPERVISOR_EVENT_LONG_PRESS]      = "long press",
-    [SUPERVISOR_EVENT_VERY_LONG_PRESS] = "very long press",
-    [SUPERVISOR_EVENT_FINALIZE_OK]     = "finalize ok",
-    [SUPERVISOR_EVENT_FINALIZE_FAILED] = "finalize failed",
-    [SUPERVISOR_EVENT_FAULT]           = "fault",
+    [SUPERVISOR_EVENT_BOOT_DONE]        = "boot done",
+    [SUPERVISOR_EVENT_RESUME_FOUND]     = "resume found",
+    [SUPERVISOR_EVENT_RESUMED]          = "resumed",
+    [SUPERVISOR_EVENT_SHORT_PRESS]      = "short press",
+    [SUPERVISOR_EVENT_LONG_PRESS]       = "long press",
+    [SUPERVISOR_EVENT_VERY_LONG_PRESS]  = "very long press",
+    [SUPERVISOR_EVENT_FINALIZE_OK]      = "finalize ok",
+    [SUPERVISOR_EVENT_FINALIZE_FAILED]  = "finalize failed",
+    [SUPERVISOR_EVENT_RECORDING_FAILED] = "recording failed",
+    [SUPERVISOR_EVENT_FAULT]            = "fault",
 };
 
 static QueueHandle_t events;

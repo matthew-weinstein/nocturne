@@ -8,6 +8,8 @@ static health_inputs_t healthy_inputs(void) {
         .free_space_pct = 50,
         .recorder_failed = false,
         .overflow_count = 0,
+        .drop_count = 0,
+        .sd_write_errors = 0,
         .silent_ms = 0,
         .upload_queue_depth = 0,
         .wifi_reconnecting = false,
@@ -48,6 +50,18 @@ static void test_a_single_overflow(void) {
     TEST_ASSERT_EQUAL_HEX32(HEALTH_PROBLEM_BUFFER_OVERFLOW, health_evaluate(&inputs));
 }
 
+static void test_a_single_dropped_frame(void) {
+    health_inputs_t inputs = healthy_inputs();
+    inputs.drop_count = 1;
+    TEST_ASSERT_EQUAL_HEX32(HEALTH_PROBLEM_AUDIO_DROPPED, health_evaluate(&inputs));
+}
+
+static void test_a_single_write_error(void) {
+    health_inputs_t inputs = healthy_inputs();
+    inputs.sd_write_errors = 1;
+    TEST_ASSERT_EQUAL_HEX32(HEALTH_PROBLEM_SD_WRITE_ERRORS, health_evaluate(&inputs));
+}
+
 static void test_mic_silent_for_the_limit(void) {
     health_inputs_t inputs = healthy_inputs();
 
@@ -81,13 +95,16 @@ static void test_problems_combine(void) {
         .free_space_pct = 5,
         .recorder_failed = true,
         .overflow_count = 3,
+        .drop_count = 2,
+        .sd_write_errors = 1,
         .silent_ms = HEALTH_MAX_SILENT_MS,
         .upload_queue_depth = HEALTH_MAX_UPLOAD_QUEUE_DEPTH,
         .wifi_reconnecting = false,
     };
     uint32_t expected = HEALTH_PROBLEM_SD_FULL | HEALTH_PROBLEM_RECORDER_FAILED |
                         HEALTH_PROBLEM_BUFFER_OVERFLOW | HEALTH_PROBLEM_MIC_SILENT |
-                        HEALTH_PROBLEM_UPLOAD_BACKLOG;
+                        HEALTH_PROBLEM_UPLOAD_BACKLOG | HEALTH_PROBLEM_AUDIO_DROPPED |
+                        HEALTH_PROBLEM_SD_WRITE_ERRORS;
     TEST_ASSERT_EQUAL_HEX32(expected, health_evaluate(&inputs));
 }
 
@@ -98,6 +115,8 @@ void run_health_tests(void) {
     RUN_TEST(test_free_space_must_exceed_the_minimum);
     RUN_TEST(test_failed_recorder);
     RUN_TEST(test_a_single_overflow);
+    RUN_TEST(test_a_single_dropped_frame);
+    RUN_TEST(test_a_single_write_error);
     RUN_TEST(test_mic_silent_for_the_limit);
     RUN_TEST(test_upload_queue_at_the_limit);
     RUN_TEST(test_upload_queue_is_excused_while_wifi_reconnects);

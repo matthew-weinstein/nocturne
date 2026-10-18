@@ -1,6 +1,7 @@
 #include "i2s_microphone.h"
 #include "audio_format.h"
 #include "driver/i2s_std.h"
+#include "esp_attr.h"
 #include "freertos/FreeRTOS.h"
 
 #define MICROPHONE_BCLK_PIN GPIO_NUM_15
@@ -9,10 +10,24 @@
 
 #define BYTES_PER_SAMPLE sizeof(int32_t)
 
+#define DMA_DESCRIPTORS      8
+#define DMA_FRAMES_PER_DESC  1023
+
 static i2s_chan_handle_t microphone_channel;
+static volatile uint32_t num_overflows;
+
+static bool IRAM_ATTR count_overflow(i2s_chan_handle_t channel, i2s_event_data_t *event, void *context) {
+    (void)channel;
+    (void)event;
+    (void)context;
+    num_overflows++;
+    return false;
+}
 
 esp_err_t i2s_microphone_init(void) {
     i2s_chan_config_t channel_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO, I2S_ROLE_MASTER);
+    channel_cfg.dma_desc_num = DMA_DESCRIPTORS;
+    channel_cfg.dma_frame_num = DMA_FRAMES_PER_DESC;
 
     esp_err_t status = i2s_new_channel(&channel_cfg, NULL, &microphone_channel);
     if (status != ESP_OK) {
@@ -43,6 +58,14 @@ esp_err_t i2s_microphone_init(void) {
         return status;
     }
 
+    i2s_event_callbacks_t callbacks = {
+        .on_recv_q_ovf = count_overflow,
+    };
+    status = i2s_channel_register_event_callback(microphone_channel, &callbacks, NULL);
+    if (status != ESP_OK) {
+        return status;
+    }
+
     return i2s_channel_enable(microphone_channel);
 }
 
@@ -54,4 +77,8 @@ esp_err_t i2s_microphone_read(int32_t *out_samples, size_t max_samples, size_t *
 
     *num_samples = num_bytes / BYTES_PER_SAMPLE;
     return status;
+}
+
+uint32_t i2s_microphone_overflow_count(void) {
+    return num_overflows;
 }
