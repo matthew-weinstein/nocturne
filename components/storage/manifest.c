@@ -13,6 +13,7 @@
 #define RECORD_SESSION_COMPLETE 3
 #define RECORD_HEARTBEAT 4
 #define RECORD_SESSION_RESUMED 5
+#define RECORD_METADATA_UPLOADED 6
 
 typedef struct __attribute__((packed)) {
     char magic[MANIFEST_MAGIC_LEN];
@@ -74,6 +75,9 @@ static void apply_record(manifest_t *manifest, const manifest_record_t *record) 
         break;
     case RECORD_SESSION_RESUMED:
         manifest->resume_count++;
+        break;
+    case RECORD_METADATA_UPLOADED:
+        manifest->metadata_uploaded = true;
         break;
     default:
         break;
@@ -225,6 +229,22 @@ esp_err_t manifest_record_resume(manifest_t *manifest, const char *path) {
     return ESP_OK;
 }
 
+esp_err_t manifest_record_metadata_upload(manifest_t *manifest, const char *path) {
+    manifest_record_t record = {
+        .type = RECORD_METADATA_UPLOADED,
+        .index = 0,
+        .num_bytes = 0,
+    };
+
+    esp_err_t status = append_record(path, &record);
+    if (status != ESP_OK) {
+        return status;
+    }
+
+    apply_record(manifest, &record);
+    return ESP_OK;
+}
+
 int manifest_next_upload(const manifest_t *manifest) {
     for (int i = 0; i < manifest->num_segments; i++) {
         if (!manifest->segments[i].uploaded) {
@@ -242,4 +262,8 @@ int manifest_num_pending(const manifest_t *manifest) {
         }
     }
     return num_pending;
+}
+
+bool manifest_fully_uploaded(const manifest_t *manifest) {
+    return manifest->complete && manifest->metadata_uploaded && manifest_num_pending(manifest) == 0;
 }

@@ -214,8 +214,63 @@ static esp_err_t finalize(const char *session_dir, session_json_t *metadata, int
         return err;
     }
 
+    err = manifest_record_metadata_upload(&manifest, manifest_path);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "%s uploaded but not journaled: %s", object_name, esp_err_to_name(err));
+        return err;
+    }
+
     ESP_LOGI(TAG, "%s finalized: %d segments, %" PRIu32 " retries", manifest.session_id, manifest.num_segments,
              num_retries);
+    return ESP_OK;
+}
+
+static bool delete_next(const cleanup_session_t *session, int64_t now_unix) {
+    uint32_t free_pct;
+    if (sd_card_free_pct(&free_pct) != ESP_OK || !cleanup_should_delete(session, now_unix, free_pct, RETENTION_SECONDS)) {
+        return false;
+    }
+
+    wait_while_paused();
+    esp_err_t err = cleanup_delete_session(session->dir);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "could not delete %s: %s", session->dir, esp_err_to_name(err));
+        return false;
+    }
+
+    ESP_LOGI(TAG, "deleted %s, last written %" PRId64 ", %" PRIu32 "%% free before", session->dir,
+             session->last_written_unix, free_pct);
+    return true;
+}
+
+static esp_err_t clean_up(int *out_num_deleted) {
+    static cleanup_scan_t scan;
+
+    *out_num_deleted = 0;
+    int64_t now_unix = (int64_t)time(NULL);
+
+    for (;;) {
+        esp_err_t err = cleanup_scan(SESSION_ROOT_DIR, &scan);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "cleanup scan failed: %s", esp_err_to_name(err));
+            return err;
+        }
+
+        int num_listed = cleanup_num_listed(&scan);
+        int num_deleted = 0;
+        while (num_deleted < num_listed && delete_next(&scan.sessions[num_deleted], now_unix)) {
+            num_deleted++;
+        }
+
+        *out_num_deleted += num_deleted;
+        if (num_deleted < num_listed || num_listed == scan.num_deletable) {
+            break;
+        }
+    }
+
+    uint32_t free_pct = 0;
+    (void)sd_card_free_pct(&free_pct);
+    ESP_LOGI(TAG, "cleanup: %d sessions deleted, %" PRIu32 "%% free", *out_num_deleted, free_pct);
     return ESP_OK;
 }
 
