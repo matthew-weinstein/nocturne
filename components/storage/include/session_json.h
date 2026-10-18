@@ -17,6 +17,7 @@ typedef struct {
     bool time_reliable;
     int resume_count;
     bool recovered;
+    uint32_t muted_frames;
     uint32_t buffer_overflows;
     uint32_t sd_write_errors;
     uint32_t upload_retries;

@@ -16,6 +16,8 @@
 #define LAST_SEGMENT_FRAMES (FRAMES_PER_SEGMENT / 2)
 #define NUM_SEGMENTS        3
 #define NUM_FRAMES          (2 * FRAMES_PER_SEGMENT + LAST_SEGMENT_FRAMES)
+#define NUM_MUTED_FRAMES    50
+#define FIRST_MUTED_FRAME   (FRAMES_PER_SEGMENT - NUM_MUTED_FRAMES / 2)
 
 #define PACKET_BYTES       40
 #define LENGTH_FIELD_BYTES 4
@@ -110,6 +112,10 @@ static void remove_session(const char *dir) {
     TEST_ASSERT_EQUAL(0, rmdir(dir));
 }
 
+static bool is_muted(int frame) {
+    return frame >= FIRST_MUTED_FRAME && frame < FIRST_MUTED_FRAME + NUM_MUTED_FRAMES;
+}
+
 TEST_CASE("a session rotates segments and every chunk opens", "[storage][sd]") {
     TEST_ASSERT_EQUAL(ESP_OK, sd_card_mount());
     TEST_ASSERT_EQUAL(ESP_OK, key_manager_init(TEST_PASSPHRASE));
@@ -117,7 +123,7 @@ TEST_CASE("a session rotates segments and every chunk opens", "[storage][sd]") {
 
     for (int frame = 0; frame < NUM_FRAMES; frame++) {
         build_packet(frame);
-        TEST_ASSERT_EQUAL(ESP_OK, session_write_packet(packet, sizeof(packet)));
+        TEST_ASSERT_EQUAL(ESP_OK, session_write_packet(packet, sizeof(packet), is_muted(frame)));
     }
     TEST_ASSERT_EQUAL(ESP_OK, session_finish());
 
@@ -127,6 +133,7 @@ TEST_CASE("a session rotates segments and every chunk opens", "[storage][sd]") {
     TEST_ASSERT_EQUAL(ESP_OK, manifest_open(&manifest, path));
     TEST_ASSERT_TRUE(manifest.complete);
     TEST_ASSERT_EQUAL_INT(NUM_SEGMENTS, manifest.num_segments);
+    TEST_ASSERT_EQUAL_UINT32(NUM_MUTED_FRAMES, manifest.muted_frames);
 
     int next_frame = 0;
     for (int i = 0; i < NUM_SEGMENTS; i++) {

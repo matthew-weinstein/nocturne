@@ -11,6 +11,8 @@
 static volatile bool seen_short;
 static volatile bool seen_long;
 static volatile bool seen_very_long;
+static volatile bool seen_down;
+static volatile bool seen_up;
 
 static void on_event(button_event_t event) {
     switch (event) {
@@ -25,6 +27,12 @@ static void on_event(button_event_t event) {
     case BUTTON_EVENT_VERY_LONG:
         printf("very long\n");
         seen_very_long = true;
+        break;
+    case BUTTON_EVENT_DOWN:
+        seen_down = true;
+        break;
+    case BUTTON_EVENT_UP:
+        seen_up = true;
         break;
     }
 }
@@ -44,4 +52,6 @@ TEST_CASE("the button reports short, long and very long presses (press it)", "[h
     TEST_ASSERT_TRUE_MESSAGE(seen_short, "no short press");
     TEST_ASSERT_TRUE_MESSAGE(seen_long, "no long press");
     TEST_ASSERT_TRUE_MESSAGE(seen_very_long, "no very long press");
+    TEST_ASSERT_TRUE_MESSAGE(seen_down, "no press reported down");
+    TEST_ASSERT_TRUE_MESSAGE(seen_up, "no press reported up");
 }

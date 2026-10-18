@@ -6,6 +6,8 @@ typedef enum {
     BUTTON_EVENT_SHORT,
     BUTTON_EVENT_LONG,
     BUTTON_EVENT_VERY_LONG,
+    BUTTON_EVENT_DOWN,
+    BUTTON_EVENT_UP,
 } button_event_t;
 
 typedef void (*button_handler_t)(button_event_t event);

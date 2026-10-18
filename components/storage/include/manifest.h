@@ -7,6 +7,9 @@
 
 #define MANIFEST_MAX_SEGMENTS 256
 #define MANIFEST_SESSION_ID_LEN 24
+#define MANIFEST_MUTE_START_BITS 20
+#define MANIFEST_MAX_MUTE_START  ((1u << MANIFEST_MUTE_START_BITS) - 1)
+#define MANIFEST_MAX_MUTED_RUN   ((1u << (32 - MANIFEST_MUTE_START_BITS)) - 1)
 
 typedef struct {
     size_t num_bytes;
@@ -20,6 +23,7 @@ typedef struct {
     bool complete;
     int resume_count;
     bool metadata_uploaded;
+    uint32_t muted_frames;
     manifest_segment_t segments[MANIFEST_MAX_SEGMENTS];
 } manifest_t;
 
@@ -31,6 +35,8 @@ esp_err_t manifest_record_complete(manifest_t *manifest, const char *path);
 esp_err_t manifest_record_heartbeat(const char *path);
 esp_err_t manifest_record_resume(manifest_t *manifest, const char *path);
 esp_err_t manifest_record_metadata_upload(manifest_t *manifest, const char *path);
+esp_err_t manifest_record_mute(manifest_t *manifest, const char *path, int segment, uint32_t start_frame,
+                               uint32_t num_frames);
 int manifest_next_upload(const manifest_t *manifest);
 int manifest_num_pending(const manifest_t *manifest);
 bool manifest_fully_uploaded(const manifest_t *manifest);

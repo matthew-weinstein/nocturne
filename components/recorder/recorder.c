@@ -14,11 +14,14 @@
 #include "freertos/task.h"
 #include "i2s_microphone.h"
 #include "pcm_convert.h"
+#include "press_mute.h"
 #include "ring_buffer.h"
 #include "session.h"
 
 #define RING_CAPACITY_SAMPLES (AUDIO_FORMAT_SAMPLE_RATE_HZ * 10)
 #define BLOCK_SAMPLES         512
+#define ENCODE_DELAY_SAMPLES  AUDIO_FORMAT_SAMPLE_RATE_HZ
+#define SAMPLES_PER_MS        (AUDIO_FORMAT_SAMPLE_RATE_HZ / 1000)
 
 #define TASK_STACK_BYTES 16384
 #define TASK_PRIORITY    20
@@ -49,6 +52,16 @@ static bool failed;
 static uint32_t overflow_count;
 static uint32_t drop_count;
 static int64_t last_sound_us;
+
+static portMUX_TYPE press_lock = portMUX_INITIALIZER_UNLOCKED;
+static bool down_pending;
+static bool up_pending;
+static int64_t down_us;
+static int64_t up_us;
+
+static press_mute_t mute;
+static uint32_t accepted_samples;
+static uint32_t encoded_samples;
 
 static bool has_sound(const int16_t *block, size_t num_samples) {
     for (size_t i = 0; i < num_samples; i++) {
@@ -99,12 +112,49 @@ static void set_backpressure(bool engaged) {
     }
 }
 
-static esp_err_t encode_available(void) {
-    while (ring_buffer_available() >= AUDIO_FORMAT_FRAME_SAMPLES) {
+static uint32_t sample_at(int64_t at_us, int64_t now_us) {
+    int64_t samples_ago = (now_us - at_us) * SAMPLES_PER_MS / 1000;
+    if (samples_ago <= 0) {
+        return accepted_samples;
+    }
+    if (samples_ago >= (int64_t)accepted_samples) {
+        return 0;
+    }
+    return accepted_samples - (uint32_t)samples_ago;
+}
+
+static void take_presses(void) {
+    taskENTER_CRITICAL(&press_lock);
+    bool pressed = down_pending;
+    bool released = up_pending;
+    int64_t pressed_us = down_us;
+    int64_t released_us = up_us;
+    down_pending = false;
+    up_pending = false;
+    taskEXIT_CRITICAL(&press_lock);
+
+    int64_t now_us = esp_timer_get_time();
+    if (pressed && released && released_us < pressed_us) {
+        press_mute_release(&mute, sample_at(released_us, now_us));
+        released = false;
+    }
+    if (pressed) {
+        press_mute_press(&mute, sample_at(pressed_us, now_us));
+    }
+    if (released) {
+        press_mute_release(&mute, sample_at(released_us, now_us));
+    }
+}
+
+static esp_err_t encode_available(uint32_t delay_samples) {
+    while (ring_buffer_available() >= AUDIO_FORMAT_FRAME_SAMPLES + delay_samples) {
         esp_err_t status = ring_buffer_read(frame, AUDIO_FORMAT_FRAME_SAMPLES);
         if (status != ESP_OK) {
             return status;
         }
+
+        bool muted = press_mute_apply(&mute, encoded_samples, frame, AUDIO_FORMAT_FRAME_SAMPLES) > 0;
+        encoded_samples += AUDIO_FORMAT_FRAME_SAMPLES;
 
         size_t num_bytes = 0;
         status = audio_encoder_encode_frame(frame, packet, sizeof(packet), &num_bytes);
@@ -114,7 +164,7 @@ static esp_err_t encode_available(void) {
             continue;
         }
 
-        status = session_write_packet(packet, num_bytes);
+        status = session_write_packet(packet, num_bytes, muted);
         if (status != ESP_OK) {
             return status;
         }
@@ -158,6 +208,10 @@ static esp_err_t capture(void) {
     bool silence_logged = false;
     esp_err_t status = ESP_OK;
 
+    press_mute_reset(&mute);
+    accepted_samples = 0;
+    encoded_samples = 0;
+
     while (!stop_requested && status == ESP_OK) {
         size_t num_samples = 0;
         esp_err_t read_status = i2s_microphone_read(samples, BLOCK_SAMPLES, &num_samples);
@@ -173,6 +227,10 @@ static esp_err_t capture(void) {
         }
 
         bool ring_overflowed = ring_buffer_write(pcm, num_samples) != ESP_OK;
+        if (!ring_overflowed) {
+            accepted_samples += num_samples;
+        }
+        take_presses();
         uint32_t block_overflows = count_overflows(ring_overflowed, &mic_overflows_seen);
         num_overflows += block_overflows;
         record_block(block_overflows, has_sound(pcm, num_samples));
@@ -190,9 +248,13 @@ static esp_err_t capture(void) {
         }
         set_backpressure(engaged);
 
-        status = encode_available();
+        status = encode_available(ENCODE_DELAY_SAMPLES);
     }
 
+    if (status == ESP_OK) {
+        take_presses();
+        status = encode_available(0);
+    }
     set_backpressure(false);
 
     ESP_LOGI(TAG, "captured %" PRIu32 " samples, peak occupancy %u, overflows %" PRIu32 ", uploads paused %" PRIu32
@@ -300,6 +362,10 @@ static esp_err_t begin(const char *session_dir) {
 
     snprintf(resume_dir, sizeof(resume_dir), "%s", session_dir);
     reset_stats();
+    taskENTER_CRITICAL(&press_lock);
+    down_pending = false;
+    up_pending = false;
+    taskEXIT_CRITICAL(&press_lock);
     stop_requested = false;
     xTaskNotifyGive(task);
     return ESP_OK;
@@ -329,6 +395,22 @@ esp_err_t recorder_stop(void) {
 
     xTaskNotifyGive(task);
     return ESP_OK;
+}
+
+static void note_press(bool *pending, int64_t *at_us) {
+    int64_t now_us = esp_timer_get_time();
+    taskENTER_CRITICAL(&press_lock);
+    *pending = true;
+    *at_us = now_us;
+    taskEXIT_CRITICAL(&press_lock);
+}
+
+void recorder_button_down(void) {
+    note_press(&down_pending, &down_us);
+}
+
+void recorder_button_up(void) {
+    note_press(&up_pending, &up_us);
 }
 
 void recorder_get_stats(recorder_stats_t *out_stats) {

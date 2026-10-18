@@ -157,6 +157,7 @@ static esp_err_t write_session_json(const char *path, session_json_t *metadata) 
     metadata->started_unix = manifest.started_unix;
     metadata->segment_count = manifest.num_segments;
     metadata->resume_count = manifest.resume_count;
+    metadata->muted_frames = manifest.muted_frames;
     metadata->upload_retries = num_retries;
 
     size_t num_bytes = 0;

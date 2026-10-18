@@ -43,6 +43,8 @@ static uint8_t chunk_record[SEGMENT_FORMAT_MAX_CHUNK_RECORD_BYTES];
 static size_t chunk_plaintext_bytes;
 static uint32_t chunk_index;
 static uint32_t num_write_errors;
+static uint32_t muted_run_start;
+static uint32_t muted_run_frames;
 
 static bool write_at_end(const uint8_t *data, size_t num_bytes) {
     return fseek(segment_file, (long)bytes_in_segment, SEEK_SET) == 0
@@ -86,6 +88,7 @@ static esp_err_t open_segment(void) {
     setvbuf(segment_file, NULL, _IONBF, 0);
 
     segment_cursor_reset(&cursor, FRAMES_PER_SEGMENT);
+    muted_run_frames = 0;
     chunk_plaintext_bytes = 0;
     chunk_index = 0;
     bytes_in_segment = 0;
@@ -136,6 +139,32 @@ static esp_err_t close_segment(void) {
     }
 
     return manifest_record_segment(&manifest, manifest_path, bytes_in_segment);
+}
+
+static esp_err_t end_muted_run(void) {
+    if (muted_run_frames == 0) {
+        return ESP_OK;
+    }
+
+    esp_err_t status = manifest_record_mute(&manifest, manifest_path, manifest.num_segments, muted_run_start,
+                                            muted_run_frames);
+    muted_run_frames = 0;
+    return status;
+}
+
+static esp_err_t note_frame(bool muted) {
+    if (!muted) {
+        return end_muted_run();
+    }
+
+    if (muted_run_frames == 0) {
+        muted_run_start = cursor.frames_in_segment;
+    }
+    muted_run_frames++;
+    if (muted_run_frames == MANIFEST_MAX_MUTED_RUN) {
+        return end_muted_run();
+    }
+    return ESP_OK;
 }
 
 esp_err_t session_start(session_segment_handler_t on_segment_closed) {
@@ -213,9 +242,14 @@ esp_err_t session_resume(const char *existing_session_dir, session_segment_handl
     return open_segment();
 }
 
-esp_err_t session_write_packet(const uint8_t *packet, size_t num_bytes) {
+esp_err_t session_write_packet(const uint8_t *packet, size_t num_bytes, bool muted) {
     esp_err_t status = segment_format_append_frame(chunk_plaintext, sizeof(chunk_plaintext),
                                                    &chunk_plaintext_bytes, packet, num_bytes);
+    if (status != ESP_OK) {
+        return status;
+    }
+
+    status = note_frame(muted);
     if (status != ESP_OK) {
         return status;
     }
@@ -224,6 +258,10 @@ esp_err_t session_write_packet(const uint8_t *packet, size_t num_bytes) {
     case SEGMENT_CURSOR_FLUSH_CHUNK:
         return flush_chunk();
     case SEGMENT_CURSOR_CLOSE_SEGMENT:
+        status = end_muted_run();
+        if (status != ESP_OK) {
+            return status;
+        }
         status = close_segment();
         if (status != ESP_OK) {
             return status;
@@ -243,7 +281,12 @@ esp_err_t session_write_packet(const uint8_t *packet, size_t num_bytes) {
 }
 
 esp_err_t session_finish(void) {
-    esp_err_t status = close_segment();
+    esp_err_t status = end_muted_run();
+    if (status != ESP_OK) {
+        return status;
+    }
+
+    status = close_segment();
     if (status != ESP_OK) {
         return status;
     }
