@@ -21,6 +21,8 @@ FAULT = "BOOT -> FAULT (fault)"
 FAULT_DONE = "NCT_FAULT done"
 WIFI_DOWN = "NCT_WIFI outage=start status=ESP_OK"
 WIFI_UP = "NCT_WIFI outage=end status=ESP_OK"
+WATCHDOG_TRIGGERED = "Task watchdog got triggered"
+SESSION_FINISHED = "finished /sdcard/sessions/"
 
 FULL_SEGMENT_FRAMES = 500
 EXPECTED_FRAMES = 1750
@@ -41,6 +43,7 @@ UPLOAD_LINE = re.compile(rb"NCT_UPLOAD ([^\r\n]+)")
 CAPTURE_SUMMARY = re.compile(rb"peak occupancy (\d+), overflows (\d+)")
 HEALTH_LINE = re.compile(rb"upload queue (\d+), wifi (\w+), problems 0x([0-9a-f]+)")
 RECORDING_OR_DONE = re.compile(rb"IDLE -> RECORDING|NCT_FAULT done")
+RECORDER_LATE = re.compile(rb"- recorder \(CPU")
 
 def fault_build(fault):
     return pytest.mark.parametrize("build_dir", [f"build-fault-{fault}"], indirect=True)
@@ -211,6 +214,17 @@ def test_encoder_stall_counts_overflows(dut: Dut):
 
     dut.expect_exact(FINALIZED, timeout=CHECK_TIMEOUT_S)
     dut.expect_exact(FAULT_DONE, timeout=CHECK_TIMEOUT_S)
+
+@pytest.mark.fault
+@fault_build("recorder_hang")
+def test_recorder_hang_resets_and_finishes(dut: Dut):
+    hang_timeout_s = 120
+    dut.expect_exact(BOOT_DONE, timeout=BOOT_TIMEOUT_S)
+    dut.expect_exact(RECORDING_STARTED, timeout=BOOT_TIMEOUT_S)
+    dut.expect_exact("NCT_FAULT inject=recorder hang", timeout=CAPTURE_TIMEOUT_S)
+    dut.expect_exact(WATCHDOG_TRIGGERED, timeout=hang_timeout_s)
+    dut.expect(RECORDER_LATE, timeout=CHECK_TIMEOUT_S)
+    dut.expect_exact(SESSION_FINISHED, timeout=BOOT_TIMEOUT_S)
 
 @pytest.mark.fault
 @fault_build("upload_failing")
