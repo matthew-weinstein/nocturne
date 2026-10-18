@@ -1,4 +1,5 @@
 idf_component_register(SRCS "sd_card.c"
+                            "cleanup.c"
                             "manifest.c"
                             "recovery.c"
                             "segment_cursor.c"

@@ -4,6 +4,7 @@
 
 void app_main(void) {
     UNITY_BEGIN();
+    run_cleanup_tests();
     run_manifest_tests();
     run_recovery_tests();
     run_segment_cursor_tests();

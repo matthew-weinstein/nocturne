@@ -16,6 +16,7 @@
 #include "sd_card.h"
 #include "session.h"
 #include "recovery.h"
+#include "cleanup.h"
 #include "recorder.h"
 #include "sdkconfig.h"
 #include "system_check.h"
@@ -37,9 +38,11 @@
 #define RESUME_WINDOW_SECONDS (CONFIG_NOCTURNE_RESUME_WINDOW_MINUTES * 60)
 
 #if CONFIG_NOCTURNE_SYSTEM_CHECK
-#define RESUME_ENABLED false
+#define RESUME_ENABLED  false
+#define CLEANUP_ENABLED false
 #else
-#define RESUME_ENABLED true
+#define RESUME_ENABLED  true
+#define CLEANUP_ENABLED true
 #endif
 
 #if CONFIG_NOCTURNE_OPUS_APPLICATION_AUDIO
@@ -263,9 +266,12 @@ static void upload_next_finished_session(void) {
     }
 }
 
-static void on_upload_done(uploader_job_t job, esp_err_t result, int num_uploaded) {
+static void on_upload_done(uploader_job_t job, esp_err_t result, int num_done) {
     if (job == UPLOADER_JOB_RECOVER) {
         recovery_uploading = false;
+    }
+    if (job == UPLOADER_JOB_FINALIZE || job == UPLOADER_JOB_RECOVER) {
+        clean_up();
     }
     upload_next_finished_session();
 
@@ -273,13 +279,13 @@ static void on_upload_done(uploader_job_t job, esp_err_t result, int num_uploade
         supervisor_post(result == ESP_OK ? SUPERVISOR_EVENT_FINALIZE_OK : SUPERVISOR_EVENT_FINALIZE_FAILED);
         return;
     }
-    if (job == UPLOADER_JOB_RECOVER) {
+    if (job != UPLOADER_JOB_PENDING) {
         return;
     }
 #if CONFIG_NOCTURNE_SYSTEM_CHECK
-    system_check_pending_done(result, num_uploaded);
+    system_check_pending_done(result, num_done);
 #else
-    (void)num_uploaded;
+    (void)num_done;
 #endif
 }
 
@@ -438,6 +444,7 @@ void app_main(void)
     ESP_ERROR_CHECK(recorder_init(on_recording_finished, on_segment_closed, on_backpressure));
     ESP_ERROR_CHECK(uploader_init(on_upload_done));
     bool resuming = recover_sessions();
+    clean_up();
     supervisor_post(resuming ? SUPERVISOR_EVENT_RESUME_FOUND : SUPERVISOR_EVENT_BOOT_DONE);
 
 #if CONFIG_NOCTURNE_SYSTEM_CHECK

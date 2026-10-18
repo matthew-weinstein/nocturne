@@ -13,4 +13,14 @@ menu "Nocturne storage"
             An interrupted session whose journal was last written within
             this window is resumed at boot; an older one is finished.
 
+    config NOCTURNE_RETENTION_DAYS
+        int "Retention on the card (days)"
+        default 7
+        range 0 365
+        help
+            A session that is fully in B2 is deleted from the card once its
+            journal was last written this many days ago, or sooner, oldest
+            first, while the card is more than 80 % full. 0 deletes a session
+            at the first cleanup after its session.json is uploaded.
+
 endmenu

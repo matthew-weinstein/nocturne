@@ -2,12 +2,14 @@ set(storage_dir "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 set(components_dir "${storage_dir}/..")
 
 idf_component_register(SRCS "test_main.c"
+                            "test_cleanup.c"
                             "test_manifest.c"
                             "test_recovery.c"
                             "test_segment_cursor.c"
                             "test_segment_format.c"
                             "test_session_id.c"
                             "test_session_json.c"
+                            "${storage_dir}/cleanup.c"
                             "${storage_dir}/manifest.c"
                             "${storage_dir}/recovery.c"
                             "${storage_dir}/segment_cursor.c"
