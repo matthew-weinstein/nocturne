@@ -202,6 +202,16 @@ static void test_a_new_journal_has_no_metadata_uploaded(void) {
     TEST_ASSERT_FALSE(manifest_fully_uploaded(&replayed));
 }
 
+static void test_append_to_a_missing_journal_creates_nothing(void) {
+    TEST_ASSERT_EQUAL(ESP_ERR_NOT_FOUND, manifest_record_heartbeat(path));
+    TEST_ASSERT_EQUAL(-1, access(path, F_OK));
+}
+
+static void test_a_journal_that_cannot_be_written_fails_after_its_retries(void) {
+    TEST_ASSERT_EQUAL(ESP_FAIL, manifest_create(&manifest, "/tmp/nocturne_no_such_dir/manifest.bin",
+                                                SESSION_ID, STARTED_UNIX));
+}
+
 static void test_segment_filename(void) {
     char name[32];
     manifest_segment_filename(42, name, sizeof(name));
@@ -230,5 +240,7 @@ void run_manifest_tests(void) {
     RUN_MANIFEST_TEST(test_a_new_journal_has_no_resumes);
     RUN_MANIFEST_TEST(test_fully_uploaded_needs_completion_every_segment_and_the_metadata);
     RUN_MANIFEST_TEST(test_a_new_journal_has_no_metadata_uploaded);
+    RUN_MANIFEST_TEST(test_append_to_a_missing_journal_creates_nothing);
+    RUN_MANIFEST_TEST(test_a_journal_that_cannot_be_written_fails_after_its_retries);
     RUN_MANIFEST_TEST(test_segment_filename);
 }

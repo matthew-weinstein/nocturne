@@ -6,6 +6,7 @@
 #include <time.h>
 
 #include <errno.h>
+#include <stdbool.h>
 #include <unistd.h>
 
 #include "aes_gcm.h"
@@ -16,6 +17,7 @@
 #include "segment_cursor.h"
 #include "segment_format.h"
 #include "session_id.h"
+#include "esp_log.h"
 #include "sdkconfig.h"
 
 #define MAX_COLLISION_SUFFIX 99
@@ -24,6 +26,8 @@
 #define FRAMES_PER_SEGMENT ((SEGMENT_SECONDS * 1000) / AUDIO_FORMAT_FRAME_MS)
 
 #define PATH_LEN        128
+
+static const char *TAG = "session";
 
 static manifest_t manifest;
 static char session_dir[SESSION_DIR_LEN];
@@ -38,20 +42,34 @@ static uint8_t chunk_plaintext[SEGMENT_FORMAT_MAX_CHUNK_PLAINTEXT_BYTES];
 static uint8_t chunk_record[SEGMENT_FORMAT_MAX_CHUNK_RECORD_BYTES];
 static size_t chunk_plaintext_bytes;
 static uint32_t chunk_index;
+static uint32_t num_write_errors;
+
+static bool write_at_end(const uint8_t *data, size_t num_bytes) {
+    return fseek(segment_file, (long)bytes_in_segment, SEEK_SET) == 0
+        && fwrite(data, 1, num_bytes, segment_file) == num_bytes
+        && fsync(fileno(segment_file)) == 0;
+}
+
+static esp_err_t append_to_segment(const uint8_t *data, size_t num_bytes) {
+    for (int retry = 0; !write_at_end(data, num_bytes); retry++) {
+        num_write_errors++;
+        if (retry == SD_CARD_WRITE_RETRIES) {
+            ESP_LOGE(TAG, "segment write failed after %d retries", SD_CARD_WRITE_RETRIES);
+            return ESP_FAIL;
+        }
+        ESP_LOGW(TAG, "segment write failed, retry %d of %d", retry + 1, SD_CARD_WRITE_RETRIES);
+        clearerr(segment_file);
+        usleep(SD_CARD_RETRY_DELAY_US);
+    }
+
+    bytes_in_segment += num_bytes;
+    return ESP_OK;
+}
 
 static esp_err_t write_segment_header(void) {
     uint8_t header[SEGMENT_FORMAT_HEADER_BYTES];
     segment_format_header(header);
-
-    if (fwrite(header, 1, sizeof(header), segment_file) != sizeof(header)) {
-        return ESP_FAIL;
-    }
-    if (fflush(segment_file) != 0 || fsync(fileno(segment_file)) != 0) {
-        return ESP_FAIL;
-    }
-
-    bytes_in_segment = sizeof(header);
-    return ESP_OK;
+    return append_to_segment(header, sizeof(header));
 }
 
 static esp_err_t open_segment(void) {
@@ -65,6 +83,7 @@ static esp_err_t open_segment(void) {
     if (segment_file == NULL) {
         return ESP_FAIL;
     }
+    setvbuf(segment_file, NULL, _IONBF, 0);
 
     segment_cursor_reset(&cursor, FRAMES_PER_SEGMENT);
     chunk_plaintext_bytes = 0;
@@ -92,14 +111,11 @@ static esp_err_t flush_chunk(void) {
         return status;
     }
 
-    if (fwrite(chunk_record, 1, record_bytes, segment_file) != record_bytes) {
-        return ESP_FAIL;
-    }
-    if (fflush(segment_file) != 0 || fsync(fileno(segment_file)) != 0) {
-        return ESP_FAIL;
+    status = append_to_segment(chunk_record, record_bytes);
+    if (status != ESP_OK) {
+        return status;
     }
 
-    bytes_in_segment += record_bytes;
     chunk_index++;
     chunk_plaintext_bytes = 0;
     return ESP_OK;
@@ -152,6 +168,7 @@ esp_err_t session_start(session_segment_handler_t on_segment_closed) {
 
     snprintf(manifest_path, sizeof(manifest_path), "%s/manifest.bin", session_dir);
     segment_closed = on_segment_closed;
+    num_write_errors = 0;
 
     esp_err_t status = manifest_create(&manifest, manifest_path, session_id, (int64_t)now);
     if (status != ESP_OK) {
@@ -170,6 +187,7 @@ esp_err_t session_resume(const char *existing_session_dir, session_segment_handl
     snprintf(session_dir, sizeof(session_dir), "%s", existing_session_dir);
     snprintf(manifest_path, sizeof(manifest_path), "%s/manifest.bin", session_dir);
     segment_closed = on_segment_closed;
+    num_write_errors = 0;
 
     esp_err_t status = manifest_open(&manifest, manifest_path);
     if (status != ESP_OK) {
@@ -235,4 +253,8 @@ esp_err_t session_finish(void) {
 
 const char *session_current_dir(void) {
     return session_dir;
+}
+
+uint32_t session_write_error_count(void) {
+    return num_write_errors;
 }
