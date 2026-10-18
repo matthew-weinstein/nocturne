@@ -22,7 +22,12 @@ static const char expected[] =
     "  \"resumed\": false,\n"
     "  \"resume_count\": 0,\n"
     "  \"recovered\": false,\n"
-    "  \"muted_ms\": 0,\n"
+    "  \"muted_ms\": 3340,\n"
+    "  \"muted\": [\n"
+    "    { \"segment\": 7, \"start_ms\": 142380, \"ms\": 960 },\n"
+    "    { \"segment\": 95, \"start_ms\": 287700, \"ms\": 2380 }\n"
+    "  ],\n"
+    "  \"muted_truncated\": false,\n"
     "  \"health\": {\n"
     "    \"buffer_overflows\": 0,\n"
     "    \"sd_write_errors\": 0,\n"
@@ -30,6 +35,11 @@ static const char expected[] =
     "    \"wifi_disconnects\": 1\n"
     "  }\n"
     "}\n";
+
+static const manifest_mute_t example_mutes[] = {
+    { .segment = 7, .start_frame = 7119, .num_frames = 48 },
+    { .segment = 95, .start_frame = 14385, .num_frames = 119 },
+};
 
 static char json[1024];
 
@@ -44,6 +54,9 @@ static session_json_t example_session(void) {
         .segment_count = 96,
         .bitrate = 32000,
         .time_reliable = true,
+        .muted_frames = 167,
+        .mutes = example_mutes,
+        .num_mutes = 2,
         .upload_retries = 3,
         .wifi_disconnects = 1,
     };
@@ -87,6 +100,37 @@ static void test_muted_frames_are_reported_in_milliseconds(void) {
     TEST_ASSERT_NOT_NULL(strstr(json, "\"recovered\": false,\n  \"muted_ms\": 1500,\n"));
 }
 
+static void test_no_mutes_print_an_empty_list(void) {
+    session_json_t session = example_session();
+    session.muted_frames = 0;
+    session.num_mutes = 0;
+    size_t num_bytes = 0;
+
+    TEST_ASSERT_EQUAL(ESP_OK, session_json_format(&session, json, sizeof(json), &num_bytes));
+    TEST_ASSERT_NOT_NULL(strstr(json, "  \"muted_ms\": 0,\n  \"muted\": [],\n  \"muted_truncated\": false,\n"));
+}
+
+static void test_a_full_mute_list_fits_the_largest_session_json(void) {
+    static manifest_mute_t mutes[MANIFEST_MAX_MUTES];
+    for (int i = 0; i < MANIFEST_MAX_MUTES; i++) {
+        mutes[i] = (manifest_mute_t){
+            .segment = MANIFEST_MAX_SEGMENTS - 1,
+            .start_frame = MANIFEST_MAX_MUTE_START,
+            .num_frames = MANIFEST_MAX_MUTED_RUN,
+        };
+    }
+    session_json_t session = example_session();
+    session.mutes = mutes;
+    session.num_mutes = MANIFEST_MAX_MUTES;
+    session.mutes_truncated = true;
+    session.muted_frames = UINT32_MAX / 20;
+
+    static char large[SESSION_JSON_MAX_BYTES];
+    size_t num_bytes = 0;
+    TEST_ASSERT_EQUAL(ESP_OK, session_json_format(&session, large, sizeof(large), &num_bytes));
+    TEST_ASSERT_NOT_NULL(strstr(large, "\"muted_truncated\": true,\n"));
+}
+
 static void test_large_and_negative_times_are_printed_whole(void) {
     session_json_t session = example_session();
     session.started_unix = -1;
@@ -128,6 +172,8 @@ void run_session_json_tests(void) {
     RUN_TEST(test_resumed_follows_resume_count);
     RUN_TEST(test_a_recovered_session_is_flagged);
     RUN_TEST(test_muted_frames_are_reported_in_milliseconds);
+    RUN_TEST(test_no_mutes_print_an_empty_list);
+    RUN_TEST(test_a_full_mute_list_fits_the_largest_session_json);
     RUN_TEST(test_large_and_negative_times_are_printed_whole);
     RUN_TEST(test_quotes_backslashes_and_control_characters_are_escaped);
     RUN_TEST(test_a_buffer_one_byte_short_is_rejected);

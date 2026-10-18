@@ -214,12 +214,49 @@ static void test_muted_runs_are_summed_on_replay(void) {
     TEST_ASSERT_EQUAL_UINT32(45 + MANIFEST_MAX_MUTED_RUN, replayed.muted_frames);
 }
 
+static void assert_mute(const manifest_mute_t *mute, int segment, uint32_t start_frame, uint32_t num_frames) {
+    TEST_ASSERT_EQUAL_INT(segment, mute->segment);
+    TEST_ASSERT_EQUAL_UINT32(start_frame, mute->start_frame);
+    TEST_ASSERT_EQUAL_UINT32(num_frames, mute->num_frames);
+}
+
+static void test_muted_runs_are_listed_with_adjacent_runs_merged(void) {
+    write_known();
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_mute(&manifest, path, 0, 100, MANIFEST_MAX_MUTED_RUN));
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_mute(&manifest, path, 0, 100 + MANIFEST_MAX_MUTED_RUN, 5));
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_mute(&manifest, path, 0, 9000, 40));
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_mute(&manifest, path, 1, 0, 20));
+
+    manifest_t replayed;
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_open(&replayed, path));
+    TEST_ASSERT_EQUAL_INT(3, replayed.num_mutes);
+    assert_mute(&replayed.mutes[0], 0, 100, MANIFEST_MAX_MUTED_RUN + 5);
+    assert_mute(&replayed.mutes[1], 0, 9000, 40);
+    assert_mute(&replayed.mutes[2], 1, 0, 20);
+    TEST_ASSERT_FALSE(replayed.mutes_truncated);
+}
+
+static void test_mutes_past_the_list_are_counted_but_not_listed(void) {
+    write_known();
+    for (int i = 0; i < MANIFEST_MAX_MUTES + 2; i++) {
+        TEST_ASSERT_EQUAL(ESP_OK, manifest_record_mute(&manifest, path, 0, (uint32_t)i * 100, 10));
+    }
+
+    manifest_t replayed;
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_open(&replayed, path));
+    TEST_ASSERT_EQUAL_INT(MANIFEST_MAX_MUTES, replayed.num_mutes);
+    TEST_ASSERT_TRUE(replayed.mutes_truncated);
+    TEST_ASSERT_EQUAL_UINT32((MANIFEST_MAX_MUTES + 2) * 10, replayed.muted_frames);
+}
+
 static void test_a_new_journal_has_no_muted_frames(void) {
     write_known();
 
     manifest_t replayed;
     TEST_ASSERT_EQUAL(ESP_OK, manifest_open(&replayed, path));
     TEST_ASSERT_EQUAL_UINT32(0, replayed.muted_frames);
+    TEST_ASSERT_EQUAL_INT(0, replayed.num_mutes);
+    TEST_ASSERT_FALSE(replayed.mutes_truncated);
 }
 
 static void test_a_muted_run_that_does_not_fit_is_rejected(void) {
@@ -270,6 +307,8 @@ void run_manifest_tests(void) {
     RUN_MANIFEST_TEST(test_fully_uploaded_needs_completion_every_segment_and_the_metadata);
     RUN_MANIFEST_TEST(test_a_new_journal_has_no_metadata_uploaded);
     RUN_MANIFEST_TEST(test_muted_runs_are_summed_on_replay);
+    RUN_MANIFEST_TEST(test_muted_runs_are_listed_with_adjacent_runs_merged);
+    RUN_MANIFEST_TEST(test_mutes_past_the_list_are_counted_but_not_listed);
     RUN_MANIFEST_TEST(test_a_new_journal_has_no_muted_frames);
     RUN_MANIFEST_TEST(test_a_muted_run_that_does_not_fit_is_rejected);
     RUN_MANIFEST_TEST(test_append_to_a_missing_journal_creates_nothing);

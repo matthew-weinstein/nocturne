@@ -27,6 +27,7 @@ EXPECTED_FRAMES = 1750
 FRAME_TOLERANCE = 50
 EXPECTED_MUTED_FRAMES = 165
 MUTED_FRAME_TOLERANCE = 30
+EXPECTED_MUTES = 2
 
 PROBLEM_BUFFER_OVERFLOW = 0x08
 PROBLEM_MIC_SILENT = 0x10
@@ -89,6 +90,7 @@ def check_finished_capture(dut):
     muted_frames = int(fields["muted_frames"])
     print(f"muted frames {muted_frames}")
     assert abs(muted_frames - EXPECTED_MUTED_FRAMES) <= MUTED_FRAME_TOLERANCE
+    assert int(fields["mutes"]) == EXPECTED_MUTES
 
     print(f"segment frames {segment_frames}")
     for frames in segment_frames[:-1]:

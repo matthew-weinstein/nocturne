@@ -4,6 +4,9 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "esp_err.h"
+#include "manifest.h"
+
+#define SESSION_JSON_MAX_BYTES 5120
 
 typedef struct {
     const char *session_id;
@@ -18,6 +21,9 @@ typedef struct {
     int resume_count;
     bool recovered;
     uint32_t muted_frames;
+    const manifest_mute_t *mutes;
+    int num_mutes;
+    bool mutes_truncated;
     uint32_t buffer_overflows;
     uint32_t sd_write_errors;
     uint32_t upload_retries;

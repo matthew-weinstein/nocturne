@@ -10,11 +10,18 @@
 #define MANIFEST_MUTE_START_BITS 20
 #define MANIFEST_MAX_MUTE_START  ((1u << MANIFEST_MUTE_START_BITS) - 1)
 #define MANIFEST_MAX_MUTED_RUN   ((1u << (32 - MANIFEST_MUTE_START_BITS)) - 1)
+#define MANIFEST_MAX_MUTES       64
 
 typedef struct {
     size_t num_bytes;
     bool uploaded;
 } manifest_segment_t;
+
+typedef struct {
+    int segment;
+    uint32_t start_frame;
+    uint32_t num_frames;
+} manifest_mute_t;
 
 typedef struct {
     char session_id[MANIFEST_SESSION_ID_LEN];
@@ -24,6 +31,9 @@ typedef struct {
     int resume_count;
     bool metadata_uploaded;
     uint32_t muted_frames;
+    manifest_mute_t mutes[MANIFEST_MAX_MUTES];
+    int num_mutes;
+    bool mutes_truncated;
     manifest_segment_t segments[MANIFEST_MAX_SEGMENTS];
 } manifest_t;
 

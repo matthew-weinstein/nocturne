@@ -223,8 +223,8 @@ static esp_err_t check_session(void) {
 
 esp_err_t system_check_session(void) {
     esp_err_t status = check_session();
-    printf("NCT_CHECK result=%s muted_frames=%" PRIu32 "\n", status == ESP_OK ? "PASS" : "FAIL",
-           manifest.muted_frames);
+    printf("NCT_CHECK result=%s muted_frames=%" PRIu32 " mutes=%d\n", status == ESP_OK ? "PASS" : "FAIL",
+           manifest.muted_frames, manifest.num_mutes);
     return status;
 }
 

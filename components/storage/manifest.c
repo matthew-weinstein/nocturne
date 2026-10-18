@@ -83,6 +83,30 @@ static esp_err_t append_record(const char *path, const manifest_record_t *record
     return write_journal(path, true, record, sizeof(*record));
 }
 
+static void apply_mute(manifest_t *manifest, int segment, uint32_t start_frame, uint32_t num_frames) {
+    manifest->muted_frames += num_frames;
+
+    if (manifest->num_mutes > 0) {
+        manifest_mute_t *last = &manifest->mutes[manifest->num_mutes - 1];
+        if (last->segment == segment && last->start_frame + last->num_frames == start_frame) {
+            last->num_frames += num_frames;
+            return;
+        }
+    }
+
+    if (manifest->num_mutes == MANIFEST_MAX_MUTES) {
+        manifest->mutes_truncated = true;
+        return;
+    }
+
+    manifest->mutes[manifest->num_mutes] = (manifest_mute_t){
+        .segment = segment,
+        .start_frame = start_frame,
+        .num_frames = num_frames,
+    };
+    manifest->num_mutes++;
+}
+
 static void apply_record(manifest_t *manifest, const manifest_record_t *record) {
     switch (record->type) {
     case RECORD_SEGMENT_CLOSED:
@@ -109,7 +133,8 @@ static void apply_record(manifest_t *manifest, const manifest_record_t *record) 
         manifest->metadata_uploaded = true;
         break;
     case RECORD_MUTED:
-        manifest->muted_frames += record->num_bytes >> MANIFEST_MUTE_START_BITS;
+        apply_mute(manifest, record->index, record->num_bytes & MANIFEST_MAX_MUTE_START,
+                   record->num_bytes >> MANIFEST_MUTE_START_BITS);
         break;
     default:
         break;
