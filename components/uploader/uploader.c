@@ -4,22 +4,27 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include "b2_client.h"
+#include "cleanup.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "manifest.h"
+#include "sd_card.h"
+#include "session.h"
 #include "wifi.h"
 
-#define SESSION_DIR_LEN 64
 #define PATH_LEN        128
 #define FILENAME_LEN    32
 #define JSON_MAX_BYTES  1024
 
 #define WIFI_TIMEOUT_MS 30000
+
+#define RETENTION_SECONDS ((int64_t)CONFIG_NOCTURNE_RETENTION_DAYS * 24 * 60 * 60)
 
 #define TASK_STACK_BYTES 12288
 #define TASK_PRIORITY    5
@@ -294,15 +299,17 @@ static void uploader_task(void *arg) {
     for (;;) {
         xQueueReceive(requests, &request, portMAX_DELAY);
 
-        if (strcmp(request.session_dir, retries_dir) != 0) {
+        if (request.job != UPLOADER_JOB_CLEANUP && strcmp(request.session_dir, retries_dir) != 0) {
             num_retries = 0;
             snprintf(retries_dir, sizeof(retries_dir), "%s", request.session_dir);
         }
 
-        int num_uploaded = 0;
+        int num_done = 0;
         esp_err_t result;
-        if (request.job == UPLOADER_JOB_FINALIZE || request.job == UPLOADER_JOB_RECOVER) {
-            result = finalize(request.session_dir, &request.metadata, &num_uploaded);
+        if (request.job == UPLOADER_JOB_CLEANUP) {
+            result = clean_up(&num_done);
+        } else if (request.job == UPLOADER_JOB_FINALIZE || request.job == UPLOADER_JOB_RECOVER) {
+            result = finalize(request.session_dir, &request.metadata, &num_done);
             if (result != ESP_OK) {
                 ESP_LOGE(TAG, "finalize failed: %s", esp_err_to_name(result));
             }
@@ -310,11 +317,11 @@ static void uploader_task(void *arg) {
                 finalizing = false;
             }
         } else {
-            result = upload_pending(request.session_dir, &num_uploaded);
+            result = upload_pending(request.session_dir, &num_done);
         }
 
         if (handler != NULL) {
-            handler(request.job, result, num_uploaded);
+            handler(request.job, result, num_done);
         }
     }
 }
@@ -382,6 +389,11 @@ esp_err_t uploader_upload_pending(const char *session_dir) {
 esp_err_t uploader_recover_session(const char *session_dir, const session_json_t *session) {
     uploader_request_t queued = { .job = UPLOADER_JOB_RECOVER, .metadata = *session };
     snprintf(queued.session_dir, sizeof(queued.session_dir), "%s", session_dir);
+    return post_leaving_finalize_slot(&queued);
+}
+
+esp_err_t uploader_clean_up(void) {
+    uploader_request_t queued = { .job = UPLOADER_JOB_CLEANUP };
     return post_leaving_finalize_slot(&queued);
 }
 
