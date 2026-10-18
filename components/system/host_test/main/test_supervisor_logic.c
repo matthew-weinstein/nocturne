@@ -62,6 +62,15 @@ static void test_in_place_actions(void) {
     }
 }
 
+static void test_only_a_press_that_would_start_recording_needs_room(void) {
+    for (int state = 0; state < NUM_STATES; state++) {
+        for (int event = 0; event < SUPERVISOR_EVENT_COUNT; event++) {
+            bool expected = state == SUPERVISOR_STATE_IDLE && event == SUPERVISOR_EVENT_SHORT_PRESS;
+            TEST_ASSERT_EQUAL(expected, supervisor_logic_needs_room(state, event));
+        }
+    }
+}
+
 static void assert_led(supervisor_state_t entered, supervisor_event_t event,
                        led_color_t color, uint32_t on_ms, uint32_t off_ms) {
     led_pattern_t pattern;
@@ -103,6 +112,7 @@ void run_supervisor_logic_tests(void) {
     UnitySetTestFile(__FILE__);
     RUN_TEST(test_every_state_event_pair_matches_the_table);
     RUN_TEST(test_in_place_actions);
+    RUN_TEST(test_only_a_press_that_would_start_recording_needs_room);
     RUN_TEST(test_led_for_each_state_entered);
     RUN_TEST(test_boot_and_resuming_leave_the_led_alone);
     RUN_TEST(test_led_for_health);

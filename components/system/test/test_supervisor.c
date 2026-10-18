@@ -24,6 +24,7 @@ static const supervisor_step_t walk[] = {
     {SUPERVISOR_EVENT_FINALIZE_OK,     SUPERVISOR_STATE_IDLE},
     {SUPERVISOR_EVENT_LONG_PRESS,      SUPERVISOR_STATE_IDLE},
     {SUPERVISOR_EVENT_VERY_LONG_PRESS, SUPERVISOR_STATE_IDLE},
+    {SUPERVISOR_EVENT_SHORT_PRESS,     SUPERVISOR_STATE_IDLE},
     {SUPERVISOR_EVENT_SHORT_PRESS,     SUPERVISOR_STATE_RECORDING},
     {SUPERVISOR_EVENT_SHORT_PRESS,     SUPERVISOR_STATE_RECORDING},
     {SUPERVISOR_EVENT_LONG_PRESS,      SUPERVISOR_STATE_FINALIZING},
@@ -37,9 +38,15 @@ static bool alternate_health(void) {
     return healthy;
 }
 
+static bool alternate_room(void) {
+    static bool has_room = true;
+    has_room = !has_room;
+    return has_room;
+}
+
 TEST_CASE("the live supervisor drives the LED through every transition (watch it)", "[system][manual]") {
     TEST_ASSERT_EQUAL(ESP_OK, led_init());
-    TEST_ASSERT_EQUAL(ESP_OK, supervisor_init(NULL, alternate_health));
+    TEST_ASSERT_EQUAL(ESP_OK, supervisor_init(NULL, alternate_health, alternate_room));
     TEST_ASSERT_EQUAL(SUPERVISOR_STATE_BOOT, supervisor_state());
 
     size_t num_steps = sizeof(walk) / sizeof(walk[0]);
