@@ -12,6 +12,7 @@ static const char expected[] =
     "  \"segment_count\": 96,\n"
     "  \"sample_rate\": 16000,\n"
     "  \"channels\": 1,\n"
+    "  \"sample_shift\": 9,\n"
     "  \"codec\": \"opus\",\n"
     "  \"bitrate\": 32000,\n"
     "  \"opus_application\": \"audio\",\n"
@@ -21,6 +22,7 @@ static const char expected[] =
     "  \"time_reliable\": true,\n"
     "  \"resumed\": false,\n"
     "  \"resume_count\": 0,\n"
+    "  \"resumes\": [],\n"
     "  \"recovered\": false,\n"
     "  \"muted_ms\": 3340,\n"
     "  \"muted\": [\n"
@@ -82,13 +84,34 @@ static void test_resumed_follows_resume_count(void) {
     TEST_ASSERT_NOT_NULL(strstr(json, "\"resume_count\": 2,\n"));
 }
 
+static void test_resumes_are_listed_by_segment_and_time(void) {
+    static const manifest_resume_t resumes[] = {
+        { .segment = 12, .started_unix = 1757208000 },
+        { .segment = 40, .started_unix = 1757219000 },
+    };
+    session_json_t session = example_session();
+    session.resume_count = 2;
+    session.resumes = resumes;
+    session.num_resumes = 2;
+    size_t num_bytes = 0;
+
+    TEST_ASSERT_EQUAL(ESP_OK, session_json_format(&session, json, sizeof(json), &num_bytes));
+    TEST_ASSERT_NOT_NULL(strstr(json,
+                                "  \"resume_count\": 2,\n"
+                                "  \"resumes\": [\n"
+                                "    { \"segment\": 12, \"started_unix\": 1757208000 },\n"
+                                "    { \"segment\": 40, \"started_unix\": 1757219000 }\n"
+                                "  ],\n"
+                                "  \"recovered\": false,\n"));
+}
+
 static void test_a_recovered_session_is_flagged(void) {
     session_json_t session = example_session();
     session.recovered = true;
     size_t num_bytes = 0;
 
     TEST_ASSERT_EQUAL(ESP_OK, session_json_format(&session, json, sizeof(json), &num_bytes));
-    TEST_ASSERT_NOT_NULL(strstr(json, "\"resume_count\": 0,\n  \"recovered\": true,\n"));
+    TEST_ASSERT_NOT_NULL(strstr(json, "\"resumes\": [],\n  \"recovered\": true,\n"));
 }
 
 static void test_muted_frames_are_reported_in_milliseconds(void) {
@@ -110,7 +133,14 @@ static void test_no_mutes_print_an_empty_list(void) {
     TEST_ASSERT_NOT_NULL(strstr(json, "  \"muted_ms\": 0,\n  \"muted\": [],\n  \"muted_truncated\": false,\n"));
 }
 
-static void test_a_full_mute_list_fits_the_largest_session_json(void) {
+static void test_full_mute_and_resume_lists_fit_the_largest_session_json(void) {
+    static manifest_resume_t resumes[MANIFEST_MAX_RESUMES];
+    for (int i = 0; i < MANIFEST_MAX_RESUMES; i++) {
+        resumes[i] = (manifest_resume_t){
+            .segment = MANIFEST_MAX_SEGMENTS - 1,
+            .started_unix = UINT32_MAX,
+        };
+    }
     static manifest_mute_t mutes[MANIFEST_MAX_MUTES];
     for (int i = 0; i < MANIFEST_MAX_MUTES; i++) {
         mutes[i] = (manifest_mute_t){
@@ -124,6 +154,9 @@ static void test_a_full_mute_list_fits_the_largest_session_json(void) {
     session.num_mutes = MANIFEST_MAX_MUTES;
     session.mutes_truncated = true;
     session.muted_frames = UINT32_MAX / 20;
+    session.resume_count = INT16_MAX;
+    session.resumes = resumes;
+    session.num_resumes = MANIFEST_MAX_RESUMES;
 
     static char large[SESSION_JSON_MAX_BYTES];
     size_t num_bytes = 0;
@@ -170,10 +203,11 @@ void run_session_json_tests(void) {
     UnitySetTestFile(__FILE__);
     RUN_TEST(test_matches_the_design_doc_example);
     RUN_TEST(test_resumed_follows_resume_count);
+    RUN_TEST(test_resumes_are_listed_by_segment_and_time);
     RUN_TEST(test_a_recovered_session_is_flagged);
     RUN_TEST(test_muted_frames_are_reported_in_milliseconds);
     RUN_TEST(test_no_mutes_print_an_empty_list);
-    RUN_TEST(test_a_full_mute_list_fits_the_largest_session_json);
+    RUN_TEST(test_full_mute_and_resume_lists_fit_the_largest_session_json);
     RUN_TEST(test_large_and_negative_times_are_printed_whole);
     RUN_TEST(test_quotes_backslashes_and_control_characters_are_escaped);
     RUN_TEST(test_a_buffer_one_byte_short_is_rejected);

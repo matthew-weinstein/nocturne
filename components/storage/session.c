@@ -231,7 +231,7 @@ esp_err_t session_resume(const char *existing_session_dir, session_segment_handl
     if (status != ESP_OK) {
         return status;
     }
-    status = manifest_record_resume(&manifest, manifest_path);
+    status = manifest_record_resume(&manifest, manifest_path, (int64_t)time(NULL));
     if (status != ESP_OK) {
         return status;
     }
