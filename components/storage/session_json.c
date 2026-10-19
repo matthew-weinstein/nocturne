@@ -4,6 +4,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include "audio_format.h"
+#include "pcm_convert.h"
 #include "segment_format.h"
 
 typedef struct {
@@ -68,6 +69,25 @@ static void append_mutes(writer_t *writer, const session_json_t *session) {
     append(writer, "  ],\n");
 }
 
+static void append_resumes(writer_t *writer, const session_json_t *session) {
+    if (session->num_resumes == 0) {
+        append(writer, "  \"resumes\": [],\n");
+        return;
+    }
+
+    append(writer, "  \"resumes\": [\n");
+    for (int i = 0; i < session->num_resumes; i++) {
+        const manifest_resume_t *resume = &session->resumes[i];
+        const char *separator = ",";
+        if (i == session->num_resumes - 1) {
+            separator = "";
+        }
+        append(writer, "    { \"segment\": %d, \"started_unix\": %" PRId64 " }%s\n", resume->segment,
+               resume->started_unix, separator);
+    }
+    append(writer, "  ],\n");
+}
+
 esp_err_t session_json_format(const session_json_t *session, char *out, size_t max_bytes, size_t *out_num_bytes) {
     *out_num_bytes = 0;
     if (max_bytes == 0) {
@@ -84,6 +104,7 @@ esp_err_t session_json_format(const session_json_t *session, char *out, size_t m
     append(&writer, "  \"segment_count\": %d,\n", session->segment_count);
     append(&writer, "  \"sample_rate\": %d,\n", AUDIO_FORMAT_SAMPLE_RATE_HZ);
     append(&writer, "  \"channels\": %d,\n", AUDIO_FORMAT_CHANNELS);
+    append(&writer, "  \"sample_shift\": %d,\n", PCM_CONVERT_SHIFT);
     append_string(&writer, "codec", "opus");
     append(&writer, "  \"bitrate\": %" PRIu32 ",\n", session->bitrate);
     append_string(&writer, "opus_application", session->opus_application);
@@ -93,6 +114,7 @@ esp_err_t session_json_format(const session_json_t *session, char *out, size_t m
     append(&writer, "  \"time_reliable\": %s,\n", session->time_reliable ? "true" : "false");
     append(&writer, "  \"resumed\": %s,\n", session->resume_count > 0 ? "true" : "false");
     append(&writer, "  \"resume_count\": %d,\n", session->resume_count);
+    append_resumes(&writer, session);
     append(&writer, "  \"recovered\": %s,\n", session->recovered ? "true" : "false");
     append(&writer, "  \"muted_ms\": %" PRIu32 ",\n", session->muted_frames * AUDIO_FORMAT_FRAME_MS);
     append_mutes(&writer, session);

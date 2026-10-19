@@ -107,6 +107,20 @@ static void apply_mute(manifest_t *manifest, int segment, uint32_t start_frame, 
     manifest->num_mutes++;
 }
 
+static void apply_resume(manifest_t *manifest, int segment, uint32_t started_unix) {
+    manifest->resume_count++;
+
+    if (started_unix == 0 || manifest->num_resumes == MANIFEST_MAX_RESUMES) {
+        return;
+    }
+
+    manifest->resumes[manifest->num_resumes] = (manifest_resume_t){
+        .segment = segment,
+        .started_unix = started_unix,
+    };
+    manifest->num_resumes++;
+}
+
 static void apply_record(manifest_t *manifest, const manifest_record_t *record) {
     switch (record->type) {
     case RECORD_SEGMENT_CLOSED:
@@ -127,7 +141,7 @@ static void apply_record(manifest_t *manifest, const manifest_record_t *record) 
         manifest->complete = true;
         break;
     case RECORD_SESSION_RESUMED:
-        manifest->resume_count++;
+        apply_resume(manifest, record->index, record->num_bytes);
         break;
     case RECORD_METADATA_UPLOADED:
         manifest->metadata_uploaded = true;
@@ -270,11 +284,16 @@ esp_err_t manifest_record_heartbeat(const char *path) {
     return append_record(path, &record);
 }
 
-esp_err_t manifest_record_resume(manifest_t *manifest, const char *path) {
+esp_err_t manifest_record_resume(manifest_t *manifest, const char *path, int64_t started_unix) {
+    uint32_t anchor_unix = 0;
+    if (started_unix > 0 && started_unix <= UINT32_MAX) {
+        anchor_unix = (uint32_t)started_unix;
+    }
+
     manifest_record_t record = {
         .type = RECORD_SESSION_RESUMED,
-        .index = 0,
-        .num_bytes = 0,
+        .index = (uint16_t)manifest->num_segments,
+        .num_bytes = anchor_unix,
     };
 
     esp_err_t status = append_record(path, &record);

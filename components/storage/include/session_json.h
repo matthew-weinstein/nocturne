@@ -6,7 +6,7 @@
 #include "esp_err.h"
 #include "manifest.h"
 
-#define SESSION_JSON_MAX_BYTES 5120
+#define SESSION_JSON_MAX_BYTES 6144
 
 typedef struct {
     const char *session_id;
@@ -19,6 +19,8 @@ typedef struct {
     uint32_t bitrate;
     bool time_reliable;
     int resume_count;
+    const manifest_resume_t *resumes;
+    int num_resumes;
     bool recovered;
     uint32_t muted_frames;
     const manifest_mute_t *mutes;

@@ -152,10 +152,10 @@ static void test_heartbeat_is_appended_and_leaves_the_state_unchanged(void) {
 
 static void test_resume_records_are_counted_on_replay(void) {
     write_known();
-    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_resume(&manifest, path));
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_resume(&manifest, path, STARTED_UNIX + 3600));
     TEST_ASSERT_EQUAL_INT(1, manifest.resume_count);
     TEST_ASSERT_EQUAL(ESP_OK, manifest_record_segment(&manifest, path, 450000));
-    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_resume(&manifest, path));
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_resume(&manifest, path, STARTED_UNIX + 7200));
     TEST_ASSERT_EQUAL_INT(2, manifest.resume_count);
     TEST_ASSERT_EQUAL_INT(HEADER_BYTES + 8 * RECORD_BYTES, file_length());
 
@@ -166,6 +166,50 @@ static void test_resume_records_are_counted_on_replay(void) {
     TEST_ASSERT_FALSE(replayed.complete);
 }
 
+static void assert_resume(const manifest_resume_t *resume, int segment, int64_t started_unix) {
+    TEST_ASSERT_EQUAL_INT(segment, resume->segment);
+    TEST_ASSERT_EQUAL_INT64(started_unix, resume->started_unix);
+}
+
+static void test_resume_anchors_are_listed_at_the_next_segment(void) {
+    write_known();
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_resume(&manifest, path, STARTED_UNIX + 3600));
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_segment(&manifest, path, 450000));
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_resume(&manifest, path, STARTED_UNIX + 7200));
+    TEST_ASSERT_EQUAL_INT(2, manifest.num_resumes);
+
+    manifest_t replayed;
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_open(&replayed, path));
+    TEST_ASSERT_EQUAL_INT(2, replayed.num_resumes);
+    assert_resume(&replayed.resumes[0], 3, STARTED_UNIX + 3600);
+    assert_resume(&replayed.resumes[1], 4, STARTED_UNIX + 7200);
+}
+
+static void test_a_resume_without_a_time_is_counted_but_not_listed(void) {
+    write_known();
+    const uint8_t old_resume[RECORD_BYTES] = { 5, 0, 0, 0, 0, 0, 0 };
+    append_raw(old_resume, sizeof(old_resume));
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_resume(&manifest, path, 0));
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_record_resume(&manifest, path, (int64_t)UINT32_MAX + 1));
+
+    manifest_t replayed;
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_open(&replayed, path));
+    TEST_ASSERT_EQUAL_INT(3, replayed.resume_count);
+    TEST_ASSERT_EQUAL_INT(0, replayed.num_resumes);
+}
+
+static void test_resumes_past_the_list_are_counted_but_not_listed(void) {
+    write_known();
+    for (int i = 0; i < MANIFEST_MAX_RESUMES + 2; i++) {
+        TEST_ASSERT_EQUAL(ESP_OK, manifest_record_resume(&manifest, path, STARTED_UNIX + i));
+    }
+
+    manifest_t replayed;
+    TEST_ASSERT_EQUAL(ESP_OK, manifest_open(&replayed, path));
+    TEST_ASSERT_EQUAL_INT(MANIFEST_MAX_RESUMES + 2, replayed.resume_count);
+    TEST_ASSERT_EQUAL_INT(MANIFEST_MAX_RESUMES, replayed.num_resumes);
+}
+
 static void test_a_new_journal_has_no_resumes(void) {
     write_known();
     TEST_ASSERT_EQUAL_INT(0, manifest.resume_count);
@@ -173,6 +217,7 @@ static void test_a_new_journal_has_no_resumes(void) {
     manifest_t replayed;
     TEST_ASSERT_EQUAL(ESP_OK, manifest_open(&replayed, path));
     TEST_ASSERT_EQUAL_INT(0, replayed.resume_count);
+    TEST_ASSERT_EQUAL_INT(0, replayed.num_resumes);
 }
 
 static void test_fully_uploaded_needs_completion_every_segment_and_the_metadata(void) {
@@ -303,6 +348,9 @@ void run_manifest_tests(void) {
     RUN_MANIFEST_TEST(test_pending_counts_closed_segments_not_uploaded);
     RUN_MANIFEST_TEST(test_heartbeat_is_appended_and_leaves_the_state_unchanged);
     RUN_MANIFEST_TEST(test_resume_records_are_counted_on_replay);
+    RUN_MANIFEST_TEST(test_resume_anchors_are_listed_at_the_next_segment);
+    RUN_MANIFEST_TEST(test_a_resume_without_a_time_is_counted_but_not_listed);
+    RUN_MANIFEST_TEST(test_resumes_past_the_list_are_counted_but_not_listed);
     RUN_MANIFEST_TEST(test_a_new_journal_has_no_resumes);
     RUN_MANIFEST_TEST(test_fully_uploaded_needs_completion_every_segment_and_the_metadata);
     RUN_MANIFEST_TEST(test_a_new_journal_has_no_metadata_uploaded);
