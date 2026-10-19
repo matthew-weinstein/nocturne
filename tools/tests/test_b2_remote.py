@@ -1,8 +1,9 @@
-from b2_remote import check_key, parse_session_listing, remote_path
+from b2_remote import DERIVED_PROFILE, check_key, parse_session_listing, remote_path
 
 BUCKET_ID = "4a48fe8875c6214145260818"
 BUCKET_NAME = "nocturne-7k3q9x"
 READ_ONLY_CAPABILITIES = ["listBuckets", "listFiles", "readFiles"]
+DERIVED_CAPABILITIES = READ_ONLY_CAPABILITIES + ["writeFiles"]
 
 def authorize_response(capabilities, buckets, name_prefix=None):
     return {
@@ -104,6 +105,37 @@ def test_missing_capabilities_count_as_none():
 
     assert check.capabilities == []
     assert len(check.problems) == len(READ_ONLY_CAPABILITIES)
+
+def test_a_derived_key_that_can_write_passes():
+    check = check_key(authorize_response(DERIVED_CAPABILITIES, one_bucket()), DERIVED_PROFILE)
+
+    assert check.problems == []
+    assert check.bucket_name == BUCKET_NAME
+
+def test_a_derived_key_that_can_delete_is_refused():
+    capabilities = DERIVED_CAPABILITIES + ["deleteFiles"]
+    check = check_key(authorize_response(capabilities, one_bucket()), DERIVED_PROFILE)
+
+    assert check.problems == ["the key can do more than read and write files: it has deleteFiles"]
+
+def test_a_derived_key_that_can_change_the_bucket_is_refused():
+    capabilities = DERIVED_CAPABILITIES + ["writeBuckets", "writeBucketRetentions"]
+    check = check_key(authorize_response(capabilities, one_bucket()), DERIVED_PROFILE)
+
+    assert check.problems == [
+        "the key can do more than read and write files: it has writeBuckets",
+        "the key can do more than read and write files: it has writeBucketRetentions",
+    ]
+
+def test_the_read_only_key_is_refused_for_the_derived_bucket():
+    check = check_key(authorize_response(READ_ONLY_CAPABILITIES, one_bucket()), DERIVED_PROFILE)
+
+    assert check.problems == ["the key lacks writeFiles"]
+
+def test_a_derived_key_is_refused_without_derived():
+    check = check_key(authorize_response(DERIVED_CAPABILITIES, one_bucket()))
+
+    assert check.problems == ["the key is not read-only: it has writeFiles"]
 
 def test_session_listing_strips_slashes_and_sorts():
     text = "20261017_0248/\n19700101_0000/\n\n20260906_2312/\n"

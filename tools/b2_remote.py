@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Set up the read-only rclone remote the PC pipeline pulls sessions through (design doc 9.1).
+"""Set up the rclone remotes the PC pipeline uses (design doc 9.1, 9.2).
 
 The device's key can only write. The PC gets its own key that can only list
 and read, scoped to the same bucket, created once with a key that can manage
@@ -11,11 +11,18 @@ Then:
 
     python tools/b2_remote.py --key-id <applicationKeyId>
 
-The key itself comes from NOCTURNE_B2_READ_KEY, or is prompted for, so it never
-lands in shell history. The tool authorizes with B2 and refuses a key that can
-write or delete, that covers anything but exactly one bucket, or that is
-limited to a name prefix. It then creates the rclone remote (default
-`nocturne`) and lists the session folders through it to prove it works.
+Night records go to a second bucket, through a key that can also write but
+never delete:
+
+    b2 key create --bucket <bucket>-derived nocturne-pc-derived listBuckets,listFiles,readFiles,writeFiles
+    python tools/b2_remote.py --derived --key-id <applicationKeyId>
+
+The key itself comes from NOCTURNE_B2_READ_KEY (NOCTURNE_B2_DERIVED_KEY with
+--derived), or is prompted for, so it never lands in shell history. The tool
+authorizes with B2 and refuses a key that can delete, that can write unless
+--derived, that covers anything but exactly one bucket, or that is limited to
+a name prefix. It then creates the rclone remote (default `nocturne`, or
+`nocturne-derived`) and lists the folders through it to prove it works.
 --check-only stops after the key check; --replace updates an existing remote.
 """
 
@@ -31,13 +38,41 @@ import urllib.request
 
 AUTHORIZE_URL = "https://api.backblazeb2.com/b2api/v4/b2_authorize_account"
 AUTHORIZE_TIMEOUT_S = 15
-DEFAULT_REMOTE = "nocturne"
-KEY_ID_ENV = "NOCTURNE_B2_READ_KEY_ID"
-KEY_ENV = "NOCTURNE_B2_READ_KEY"
+
+
+class Profile:
+    def __init__(self, name, refusal, default_remote, key_id_env, key_env, required, allowed_extra):
+        self.name = name
+        self.refusal = refusal
+        self.default_remote = default_remote
+        self.key_id_env = key_id_env
+        self.key_env = key_env
+        self.required = required
+        self.allowed_extra = allowed_extra
+
 
 # rclone resolves the bucket ID through b2_list_buckets, so it needs listBuckets
 # as well as the two capabilities that list and fetch files.
-REQUIRED_CAPABILITIES = ("listBuckets", "listFiles", "readFiles")
+READ_PROFILE = Profile(
+    name="read-only",
+    refusal="the key is not read-only",
+    default_remote="nocturne",
+    key_id_env="NOCTURNE_B2_READ_KEY_ID",
+    key_env="NOCTURNE_B2_READ_KEY",
+    required=("listBuckets", "listFiles", "readFiles"),
+    allowed_extra=(),
+)
+
+DERIVED_PROFILE = Profile(
+    name="derived",
+    refusal="the key can do more than read and write files",
+    default_remote="nocturne-derived",
+    key_id_env="NOCTURNE_B2_DERIVED_KEY_ID",
+    key_env="NOCTURNE_B2_DERIVED_KEY",
+    required=("listBuckets", "listFiles", "readFiles", "writeFiles"),
+    allowed_extra=("writeFiles",),
+)
+
 READ_ONLY_PREFIXES = ("list", "read")
 
 
@@ -74,16 +109,16 @@ def describe_error_body(body):
     return body.decode("utf-8", errors="replace").strip()
 
 
-def is_read_only(capability):
+def is_allowed(capability, profile):
     for prefix in READ_ONLY_PREFIXES:
         if capability.startswith(prefix):
             return True
 
-    return False
+    return capability in profile.allowed_extra
 
 
-def check_key(response):
-    """Check a v4 b2_authorize_account response for a read-only, one-bucket key."""
+def check_key(response, profile=READ_PROFILE):
+    """Check a v4 b2_authorize_account response against a profile's capabilities and one bucket."""
     check = KeyCheck()
 
     try:
@@ -97,13 +132,13 @@ def check_key(response):
         capabilities = []
     check.capabilities = list(capabilities)
 
-    for capability in REQUIRED_CAPABILITIES:
+    for capability in profile.required:
         if capability not in capabilities:
             check.problems.append(f"the key lacks {capability}")
 
     for capability in capabilities:
-        if not is_read_only(capability):
-            check.problems.append(f"the key is not read-only: it has {capability}")
+        if not is_allowed(capability, profile):
+            check.problems.append(f"{profile.refusal}: it has {capability}")
 
     buckets = allowed.get("buckets")
     if not buckets:
@@ -183,42 +218,51 @@ def list_sessions(path):
     return parse_session_listing(result.stdout)
 
 
-def read_key_id(args):
+def read_key_id(args, profile):
     if args.key_id:
         return args.key_id
 
-    key_id = os.environ.get(KEY_ID_ENV)
+    key_id = os.environ.get(profile.key_id_env)
     if key_id:
         return key_id
 
-    sys.exit(f"FAIL: pass --key-id or set {KEY_ID_ENV}")
+    sys.exit(f"FAIL: pass --key-id or set {profile.key_id_env}")
 
 
-def read_key():
-    key = os.environ.get(KEY_ENV)
+def read_key(profile):
+    key = os.environ.get(profile.key_env)
     if key:
         return key
 
-    return getpass.getpass("B2 application key (read-only): ")
+    return getpass.getpass(f"B2 application key ({profile.name}): ")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--key-id", help=f"the read-only key's applicationKeyId, or set {KEY_ID_ENV}")
-    parser.add_argument("--remote", default=DEFAULT_REMOTE, help="name of the rclone remote to create")
+    parser.add_argument("--key-id", help="the key's applicationKeyId, or set NOCTURNE_B2_READ_KEY_ID")
+    parser.add_argument("--derived", action="store_true", help="set up the derived bucket's remote, which can write")
+    parser.add_argument("--remote", help="name of the rclone remote to create")
     parser.add_argument("--replace", action="store_true", help="update the remote if it already exists")
     parser.add_argument("--check-only", action="store_true", help="check the key, leave rclone alone")
     args = parser.parse_args()
 
-    key_id = read_key_id(args)
-    key = read_key()
+    profile = READ_PROFILE
+    if args.derived:
+        profile = DERIVED_PROFILE
+
+    remote = args.remote
+    if not remote:
+        remote = profile.default_remote
+
+    key_id = read_key_id(args, profile)
+    key = read_key(profile)
 
     try:
         response = authorize(key_id, key)
     except RuntimeError as error:
         sys.exit(f"FAIL: {error}")
 
-    check = check_key(response)
+    check = check_key(response, profile)
     print(f"capabilities: {', '.join(check.capabilities)}")
 
     if check.problems:
@@ -232,8 +276,8 @@ def main():
         print("PASS")
         return
 
-    command = configure_remote(args.remote, key_id, key, args.replace)
-    path = remote_path(args.remote, check.bucket_name)
+    command = configure_remote(remote, key_id, key, args.replace)
+    path = remote_path(remote, check.bucket_name)
     print(f"remote:       {path} ({command}d)")
 
     sessions = list_sessions(path)
