@@ -38,14 +38,12 @@ COMPLETION_MARKER = "session.json"
 LEDGER_NAME = "synced.jsonl"
 PARTIAL_DIR = ".partial"
 
-
 class BucketSession:
     def __init__(self, session_id):
         self.session_id = session_id
         self.num_bytes = 0
         self.first_upload_unix = None
         self.complete = False
-
 
 def parse_mod_time(text):
     """Unix time from an rclone ModTime, which may carry nanoseconds."""
@@ -61,7 +59,6 @@ def parse_mod_time(text):
         seconds = seconds.split(".")[0]
 
     return int(datetime.fromisoformat(f"{date}T{seconds}{zone}").timestamp())
-
 
 def parse_bucket_listing(entries):
     """Sessions from `rclone lsjson --recursive --files-only`, oldest first."""
@@ -91,14 +88,11 @@ def parse_bucket_listing(entries):
     ordered.sort(key=upload_order)
     return ordered
 
-
 def upload_order(session):
     return (session.first_upload_unix, session.session_id)
 
-
 def utc_day(unix_time):
     return datetime.fromtimestamp(unix_time, timezone.utc).date()
-
 
 def read_ledger(path):
     entries = []
@@ -113,7 +107,6 @@ def read_ledger(path):
 
     return entries
 
-
 def append_ledger(path, session_id, synced_unix, num_bytes):
     entry = {"session_id": session_id, "synced_unix": synced_unix, "bytes": num_bytes}
     with open(path, "a", encoding="utf-8") as ledger:
@@ -121,14 +114,12 @@ def append_ledger(path, session_id, synced_unix, num_bytes):
         ledger.flush()
         os.fsync(ledger.fileno())
 
-
 def bytes_synced_on(ledger, day):
     total = 0
     for entry in ledger:
         if utc_day(entry["synced_unix"]) == day:
             total += entry["bytes"]
     return total
-
 
 def synced_session_ids(ledger, audio_dir):
     synced = set()
@@ -142,7 +133,6 @@ def synced_session_ids(ledger, audio_dir):
                 synced.add(folder.name)
 
     return synced
-
 
 def plan_downloads(sessions, synced, cap_bytes, used_bytes):
     """Finished, unsynced sessions oldest first, up to the day's cap.
@@ -163,7 +153,6 @@ def plan_downloads(sessions, synced, cap_bytes, used_bytes):
 
     return planned
 
-
 def sessions_at_risk(sessions, synced, now_unix):
     """Finished sessions not yet synced whose oldest file is 21 days or more in B2."""
     at_risk = []
@@ -176,17 +165,14 @@ def sessions_at_risk(sessions, synced, now_unix):
 
     return at_risk
 
-
 def age_days(session, now_unix):
     return (now_unix - session.first_upload_unix) // SECONDS_PER_DAY
-
 
 def run_rclone(arguments):
     try:
         return subprocess.run(["rclone"] + arguments, capture_output=True, text=True)
     except FileNotFoundError:
         sys.exit("FAIL: rclone is not on PATH; install it from https://rclone.org/downloads/")
-
 
 def find_bucket(remote):
     result = run_rclone(["lsf", f"{remote}:", "--dirs-only"])
@@ -204,14 +190,12 @@ def find_bucket(remote):
 
     return buckets[0]
 
-
 def list_bucket(path):
     result = run_rclone(["lsjson", path, "--recursive", "--files-only", "--fast-list"])
     if result.returncode != 0:
         sys.exit(f"FAIL: rclone lsjson {path}: {result.stderr.strip()}")
 
     return parse_bucket_listing(json.loads(result.stdout))
-
 
 def download_session(path, session, audio_dir):
     partial = audio_dir / PARTIAL_DIR / session.session_id
@@ -225,7 +209,6 @@ def download_session(path, session, audio_dir):
         sys.exit(f"FAIL: {session.session_id} downloaded without its {COMPLETION_MARKER}")
 
     os.replace(partial, final)
-
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -282,7 +265,6 @@ def main():
         days = age_days(session, now)
         print(f"WARNING: {session.session_id} has been in B2 {days} days and is not synced; "
               f"the lifecycle rule deletes it at {DELETE_AGE_DAYS}")
-
 
 if __name__ == "__main__":
     main()
