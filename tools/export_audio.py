@@ -116,16 +116,20 @@ def opus_tags():
 
 def write_ogg_opus(path, packets):
     with open(path, "wb") as file:
-        writer = OggWriter(file)
-        writer.write_page([opus_head()], 0, FLAG_BEGIN)
-        writer.write_page([opus_tags()], 0, 0)
+        return write_ogg_opus_stream(file, packets)
 
-        granule = 0
-        for start in range(0, len(packets), PACKETS_PER_PAGE):
-            page_packets = packets[start:start + PACKETS_PER_PAGE]
-            granule += sum(packet_samples(packet) for packet in page_packets)
-            is_last = start + PACKETS_PER_PAGE >= len(packets)
-            writer.write_page(page_packets, granule, FLAG_END if is_last else 0)
+
+def write_ogg_opus_stream(file, packets):
+    writer = OggWriter(file)
+    writer.write_page([opus_head()], 0, FLAG_BEGIN)
+    writer.write_page([opus_tags()], 0, 0)
+
+    granule = 0
+    for start in range(0, len(packets), PACKETS_PER_PAGE):
+        page_packets = packets[start:start + PACKETS_PER_PAGE]
+        granule += sum(packet_samples(packet) for packet in page_packets)
+        is_last = start + PACKETS_PER_PAGE >= len(packets)
+        writer.write_page(page_packets, granule, FLAG_END if is_last else 0)
 
     return granule
 

@@ -1,5 +1,8 @@
 """Builds Nocturne segment files in memory, in the layout the device writes (design doc 10)."""
 
+import io
+
+import soundfile
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from decrypt_chunk import LENGTH_FIELD_BYTES, NONCE_BYTES, build_aad
@@ -37,7 +40,7 @@ def frame_packets(packets):
 
 def seal_record(key, segment_index, chunk_index, plaintext):
     """One chunk record: length, nonce, ciphertext and tag. The nonce is fixed so tests are repeatable."""
-    nonce = bytes([chunk_index]) * NONCE_BYTES
+    nonce = bytes([chunk_index % 256]) * NONCE_BYTES
     aad = build_aad(segment_index, chunk_index)
     sealed = AESGCM(key).encrypt(nonce, plaintext, aad)
 
@@ -59,3 +62,51 @@ def make_segment(key, segment_index, frames_per_chunk):
         data += seal_record(key, segment_index, chunk_index, plaintext)
 
     return bytes(data)
+
+def make_segment_from_packets(key, segment_index, packets, first_chunk=0):
+    """A segment, or a clip starting at first_chunk, holding the given packets 50 to a chunk."""
+    data = bytearray(segment_header())
+    chunk_index = first_chunk
+
+    for start in range(0, len(packets), FRAMES_PER_CHUNK):
+        plaintext = frame_packets(packets[start:start + FRAMES_PER_CHUNK])
+        data += seal_record(key, segment_index, chunk_index, plaintext)
+        chunk_index += 1
+
+    return bytes(data)
+
+OGG_HEADER_BYTES = 27
+OGG_LACING_COUNT_OFFSET = 26
+OGG_FULL_LACING = 255
+OPUS_HEADER_PACKETS = 2
+SAMPLE_RATE_HZ = 16000
+
+def ogg_packets(data):
+    """Every packet in an Ogg stream, in order, joined across lacing values."""
+    packets = []
+    packet = bytearray()
+    offset = 0
+
+    while offset < len(data):
+        num_lacing = data[offset + OGG_LACING_COUNT_OFFSET]
+        lacing = data[offset + OGG_HEADER_BYTES:offset + OGG_HEADER_BYTES + num_lacing]
+        body = offset + OGG_HEADER_BYTES + num_lacing
+
+        for num_bytes in lacing:
+            packet += data[body:body + num_bytes]
+            body += num_bytes
+            if num_bytes < OGG_FULL_LACING:
+                packets.append(bytes(packet))
+                packet = bytearray()
+
+        offset = body
+
+    return packets
+
+def encode_opus(samples, num_frames):
+    """num_frames real 20 ms Opus packets of 16 kHz float samples, encoded by libsndfile."""
+    stream = io.BytesIO()
+    soundfile.write(stream, samples, SAMPLE_RATE_HZ, format="OGG", subtype="OPUS")
+
+    audio_packets = ogg_packets(stream.getvalue())[OPUS_HEADER_PACKETS:]
+    return audio_packets[:num_frames]

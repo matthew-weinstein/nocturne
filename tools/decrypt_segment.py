@@ -91,7 +91,8 @@ def read_header(data, result):
     return True
 
 
-def walk_segment(key, path, segment_index):
+def walk_segment(key, path, segment_index, first_chunk=0):
+    """Decrypt a segment, or a clip whose first record is chunk first_chunk of its segment."""
     data = Path(path).read_bytes()
     result = SegmentResult(Path(path), segment_index)
     result.file_bytes = len(data)
@@ -105,7 +106,7 @@ def walk_segment(key, path, segment_index):
 
     while offset < len(data):
         remaining = len(data) - offset
-        chunk_index = result.num_chunks
+        chunk_index = first_chunk + result.num_chunks
 
         if remaining < RECORD_OVERHEAD_BYTES:
             result.stop_reason = f"chunk {chunk_index} torn: {remaining} bytes left, shorter than a record"
