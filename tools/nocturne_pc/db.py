@@ -65,6 +65,41 @@ CREATE TABLE IF NOT EXISTS segments (
     PRIMARY KEY (session_id, segment)
 );
 
+CREATE TABLE IF NOT EXISTS windows (
+    session_id VARCHAR NOT NULL,
+    source VARCHAR NOT NULL,
+    segment INTEGER NOT NULL,
+    first_frame INTEGER NOT NULL,
+    class VARCHAR NOT NULL,
+    score REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS teacher (
+    session_id VARCHAR NOT NULL,
+    segment INTEGER NOT NULL,
+    first_frame INTEGER NOT NULL,
+    rank INTEGER NOT NULL,
+    yamnet_class VARCHAR NOT NULL,
+    score REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS levels (
+    session_id VARCHAR NOT NULL,
+    segment INTEGER NOT NULL,
+    first_frame INTEGER NOT NULL,
+    rms_dbfs REAL NOT NULL,
+    peak_dbfs REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS scored (
+    session_id VARCHAR NOT NULL,
+    source VARCHAR NOT NULL,
+    windows INTEGER NOT NULL,
+    muted_windows INTEGER NOT NULL,
+    scored_unix BIGINT NOT NULL,
+    PRIMARY KEY (session_id, source)
+);
+
 CREATE OR REPLACE VIEW runs AS
 SELECT session_id, 0 AS run, 0 AS first_segment, started_unix AS anchor_unix
 FROM sessions

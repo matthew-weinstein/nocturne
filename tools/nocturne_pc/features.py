@@ -9,6 +9,8 @@ reads 240 samples into the next one. Samples are 16-bit PCM scaled by
 1/32768, as YAMNet reads a WAV.
 """
 
+import functools
+
 import numpy as np
 
 SAMPLE_RATE_HZ = 16000
@@ -36,6 +38,7 @@ def hann_window():
 def hertz_to_mel(hertz):
     return MEL_HIGH_Q * np.log(1.0 + hertz / MEL_BREAK_HZ)
 
+@functools.cache
 def mel_weight_matrix(num_bands=YAMNET_BANDS, min_hz=YAMNET_MIN_HZ, max_hz=YAMNET_MAX_HZ):
     """(NUM_BINS, num_bands) triangular weights; the DC bin is always zero."""
     nyquist_hz = SAMPLE_RATE_HZ / 2
@@ -56,23 +59,19 @@ def mel_weight_matrix(num_bands=YAMNET_BANDS, min_hz=YAMNET_MIN_HZ, max_hz=YAMNE
 
 def magnitude_frames(waveform):
     """|FFT| of every full 400-sample frame at a 160-sample hop, (frames, NUM_BINS)."""
-    num_frames = 1 + (len(waveform) - WINDOW_SAMPLES) // HOP_SAMPLES
-    window = hann_window()
-    magnitudes = np.zeros((num_frames, NUM_BINS))
-
-    for frame in range(num_frames):
-        start = frame * HOP_SAMPLES
-        windowed = waveform[start:start + WINDOW_SAMPLES] * window
-        magnitudes[frame] = np.abs(np.fft.rfft(windowed, FFT_SIZE))
-
-    return magnitudes
+    frames = np.lib.stride_tricks.sliding_window_view(waveform, WINDOW_SAMPLES)[::HOP_SAMPLES]
+    return np.abs(np.fft.rfft(frames * hann_window(), FFT_SIZE, axis=1))
 
 def log_mel_patch(samples, num_bands=YAMNET_BANDS, min_hz=YAMNET_MIN_HZ, max_hz=YAMNET_MAX_HZ):
     """(96, num_bands) log-mel patch from PATCH_SAMPLES 16-bit samples."""
     samples = np.asarray(samples)
-    if samples.shape != (PATCH_SAMPLES,):
-        raise ValueError(f"a patch takes {PATCH_SAMPLES} samples, not {samples.shape}")
+    return waveform_log_mel_patch(samples.astype(np.float64) / PCM_FULL_SCALE, num_bands, min_hz, max_hz)
 
-    waveform = samples.astype(np.float64) / PCM_FULL_SCALE
+def waveform_log_mel_patch(waveform, num_bands=YAMNET_BANDS, min_hz=YAMNET_MIN_HZ, max_hz=YAMNET_MAX_HZ):
+    """(96, num_bands) log-mel patch from PATCH_SAMPLES samples at a full scale of 1.0, as audio decodes."""
+    waveform = np.asarray(waveform, dtype=np.float64)
+    if waveform.shape != (PATCH_SAMPLES,):
+        raise ValueError(f"a patch takes {PATCH_SAMPLES} samples, not {waveform.shape}")
+
     mel = magnitude_frames(waveform) @ mel_weight_matrix(num_bands, min_hz, max_hz)
     return np.log(mel + LOG_OFFSET)
