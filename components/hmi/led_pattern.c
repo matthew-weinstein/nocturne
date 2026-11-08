@@ -5,6 +5,13 @@ bool led_pattern_valid(const led_pattern_t *pattern) {
         return false;
     }
 
+    if (pattern->num_flashes > 0 && pattern->on_ms == 0) {
+        return false;
+    }
+    if (pattern->num_flashes > 1 && pattern->off_ms == 0) {
+        return false;
+    }
+
     return pattern->on_ms > 0 || pattern->off_ms == 0;
 }
 
@@ -12,8 +19,10 @@ led_pattern_step_t led_pattern_first(const led_pattern_t *pattern) {
     return (led_pattern_step_t){ .lit = true, .delay_ms = pattern->on_ms };
 }
 
-led_pattern_step_t led_pattern_next(const led_pattern_t *pattern, bool lit) {
-    if (pattern->off_ms == 0) {
+led_pattern_step_t led_pattern_next(const led_pattern_t *pattern, bool lit, uint32_t num_lit) {
+    bool last_flash = pattern->num_flashes > 0 && num_lit >= pattern->num_flashes;
+
+    if (pattern->off_ms == 0 || (lit && last_flash)) {
         return (led_pattern_step_t){ .lit = false, .delay_ms = 0 };
     }
 

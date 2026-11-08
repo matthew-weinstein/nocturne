@@ -11,4 +11,4 @@ typedef struct {
 
 bool led_pattern_valid(const led_pattern_t *pattern);
 led_pattern_step_t led_pattern_first(const led_pattern_t *pattern);
-led_pattern_step_t led_pattern_next(const led_pattern_t *pattern, bool lit);
+led_pattern_step_t led_pattern_next(const led_pattern_t *pattern, bool lit, uint32_t num_lit);

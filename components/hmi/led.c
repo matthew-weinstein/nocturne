@@ -28,10 +28,10 @@ typedef struct {
 static const led_duty_t brightness[LED_COLOR_COUNT] = {
     [LED_COLOR_OFF]   = {  0,  0,  0 },
     [LED_COLOR_GREEN] = {  0, 60,  0 },
-    [LED_COLOR_CYAN]  = {  0, 60, 60 },
+    [LED_COLOR_CYAN]  = {  0, 60, 150 },
     [LED_COLOR_RED]   = { 60,  0,  0 },
     [LED_COLOR_BLUE]  = {  0,  0, 50 },
-    [LED_COLOR_WHITE] = { 40, 40, 40 },
+    [LED_COLOR_WHITE] = { 30, 40, 100 },
     [LED_COLOR_FAULT] = { 40,  0,  0 },
 };
 
@@ -49,6 +49,7 @@ static SemaphoreHandle_t pattern_lock;
 static int64_t deadline_us = INT64_MAX;
 static led_pattern_t pattern;
 static bool pattern_lit;
+static uint32_t pattern_num_lit;
 
 static esp_err_t set_duty(ledc_channel_t channel, uint32_t duty) {
     esp_err_t status = ledc_set_duty(LED_SPEED_MODE, channel, duty);
@@ -88,8 +89,11 @@ static void on_pattern_timer(void *arg) {
 
     if (esp_timer_get_time() >= deadline_us) {
         deadline_us = INT64_MAX;
-        led_pattern_step_t step = led_pattern_next(&pattern, pattern_lit);
+        led_pattern_step_t step = led_pattern_next(&pattern, pattern_lit, pattern_num_lit);
         pattern_lit = step.lit;
+        if (step.lit) {
+            pattern_num_lit++;
+        }
 
         esp_err_t status = show(step.lit ? pattern.color : LED_COLOR_OFF);
         if (status == ESP_OK && step.delay_ms > 0) {
@@ -164,6 +168,7 @@ esp_err_t led_start(const led_pattern_t *requested) {
 
     led_pattern_step_t step = led_pattern_first(&pattern);
     pattern_lit = step.lit;
+    pattern_num_lit = 1;
 
     esp_err_t status = show(pattern.color);
     if (status == ESP_OK && step.delay_ms > 0) {
@@ -175,23 +180,23 @@ esp_err_t led_start(const led_pattern_t *requested) {
 }
 
 esp_err_t led_off(void) {
-    return led_start(&(led_pattern_t){ LED_COLOR_OFF, 0, 0 });
+    return led_start(&(led_pattern_t){ LED_COLOR_OFF, 0, 0, 0 });
 }
 
 esp_err_t led_solid(led_color_t color) {
-    return led_start(&(led_pattern_t){ color, 0, 0 });
+    return led_start(&(led_pattern_t){ color, 0, 0, 0 });
 }
 
 esp_err_t led_flash(led_color_t color, uint32_t duration_ms) {
     if (duration_ms == 0) {
         return ESP_ERR_INVALID_ARG;
     }
-    return led_start(&(led_pattern_t){ color, duration_ms, 0 });
+    return led_start(&(led_pattern_t){ color, duration_ms, 0, 0 });
 }
 
 esp_err_t led_pulse(led_color_t color, uint32_t on_ms, uint32_t off_ms) {
     if (on_ms == 0 || off_ms == 0) {
         return ESP_ERR_INVALID_ARG;
     }
-    return led_start(&(led_pattern_t){ color, on_ms, off_ms });
+    return led_start(&(led_pattern_t){ color, on_ms, off_ms, 0 });
 }

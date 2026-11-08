@@ -73,7 +73,7 @@ static bool refuse_for_room(supervisor_state_t current, supervisor_event_t event
     }
 
     ESP_LOGW(TAG, "%s refused in %s: card full", event_names[event], state_names[current]);
-    led_pattern_t pattern = supervisor_logic_led_for_health(false);
+    led_pattern_t pattern = supervisor_logic_led_for_card_full();
     show(&pattern, "card full");
     return true;
 }

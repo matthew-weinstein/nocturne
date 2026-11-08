@@ -3,10 +3,14 @@
 #include <stdint.h>
 #include "esp_err.h"
 
-#define LED_FLASH_MS     300
-#define LED_RESULT_MS    1000
-#define LED_FAULT_ON_MS  1000
-#define LED_FAULT_OFF_MS 2000
+#define LED_FLASH_MS       300
+#define LED_START_MS       1000
+#define LED_HEALTH_ON_MS   300
+#define LED_HEALTH_OFF_MS  300
+#define LED_HEALTH_FLASHES 3
+#define LED_RESULT_MS      1000
+#define LED_FAULT_ON_MS    1000
+#define LED_FAULT_OFF_MS   2000
 
 typedef enum {
     LED_COLOR_OFF,
@@ -23,6 +27,7 @@ typedef struct {
     led_color_t color;
     uint32_t on_ms;
     uint32_t off_ms;
+    uint32_t num_flashes;
 } led_pattern_t;
 
 esp_err_t led_init(void);

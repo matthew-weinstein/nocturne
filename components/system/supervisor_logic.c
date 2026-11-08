@@ -61,25 +61,25 @@ bool supervisor_logic_led_for(supervisor_state_t entered, supervisor_event_t eve
     switch (entered) {
     case SUPERVISOR_STATE_IDLE:
         if (event == SUPERVISOR_EVENT_FINALIZE_OK) {
-            *out_pattern = (led_pattern_t){ LED_COLOR_WHITE, LED_RESULT_MS, 0 };
+            *out_pattern = (led_pattern_t){ LED_COLOR_WHITE, LED_RESULT_MS, 0, 0 };
         } else if (event == SUPERVISOR_EVENT_FINALIZE_FAILED) {
-            *out_pattern = (led_pattern_t){ LED_COLOR_RED, LED_RESULT_MS, 0 };
+            *out_pattern = (led_pattern_t){ LED_COLOR_RED, LED_RESULT_MS, 0, 0 };
         } else {
-            *out_pattern = (led_pattern_t){ LED_COLOR_OFF, 0, 0 };
+            *out_pattern = (led_pattern_t){ LED_COLOR_OFF, 0, 0, 0 };
         }
         return true;
     case SUPERVISOR_STATE_RECORDING:
         if (event == SUPERVISOR_EVENT_RESUMED) {
-            *out_pattern = (led_pattern_t){ LED_COLOR_CYAN, LED_FLASH_MS, 0 };
+            *out_pattern = (led_pattern_t){ LED_COLOR_CYAN, LED_START_MS, 0, 0 };
         } else {
-            *out_pattern = (led_pattern_t){ LED_COLOR_GREEN, LED_FLASH_MS, 0 };
+            *out_pattern = (led_pattern_t){ LED_COLOR_GREEN, LED_START_MS, 0, 0 };
         }
         return true;
     case SUPERVISOR_STATE_FINALIZING:
-        *out_pattern = (led_pattern_t){ LED_COLOR_BLUE, 0, 0 };
+        *out_pattern = (led_pattern_t){ LED_COLOR_BLUE, 0, 0, 0 };
         return true;
     case SUPERVISOR_STATE_FAULT:
-        *out_pattern = (led_pattern_t){ LED_COLOR_FAULT, LED_FAULT_ON_MS, LED_FAULT_OFF_MS };
+        *out_pattern = (led_pattern_t){ LED_COLOR_FAULT, LED_FAULT_ON_MS, LED_FAULT_OFF_MS, 0 };
         return true;
     case SUPERVISOR_STATE_BOOT:
     case SUPERVISOR_STATE_RESUMING:
@@ -90,5 +90,9 @@ bool supervisor_logic_led_for(supervisor_state_t entered, supervisor_event_t eve
 
 led_pattern_t supervisor_logic_led_for_health(bool healthy) {
     led_color_t color = healthy ? LED_COLOR_GREEN : LED_COLOR_RED;
-    return (led_pattern_t){ color, LED_FLASH_MS, 0 };
+    return (led_pattern_t){ color, LED_HEALTH_ON_MS, LED_HEALTH_OFF_MS, LED_HEALTH_FLASHES };
+}
+
+led_pattern_t supervisor_logic_led_for_card_full(void) {
+    return (led_pattern_t){ LED_COLOR_RED, LED_FLASH_MS, 0, 0 };
 }

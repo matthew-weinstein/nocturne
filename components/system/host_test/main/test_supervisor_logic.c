@@ -85,8 +85,8 @@ static void test_led_for_each_state_entered(void) {
     assert_led(SUPERVISOR_STATE_IDLE, SUPERVISOR_EVENT_BOOT_DONE, LED_COLOR_OFF, 0, 0);
     assert_led(SUPERVISOR_STATE_IDLE, SUPERVISOR_EVENT_FINALIZE_OK, LED_COLOR_WHITE, LED_RESULT_MS, 0);
     assert_led(SUPERVISOR_STATE_IDLE, SUPERVISOR_EVENT_FINALIZE_FAILED, LED_COLOR_RED, LED_RESULT_MS, 0);
-    assert_led(SUPERVISOR_STATE_RECORDING, SUPERVISOR_EVENT_SHORT_PRESS, LED_COLOR_GREEN, LED_FLASH_MS, 0);
-    assert_led(SUPERVISOR_STATE_RECORDING, SUPERVISOR_EVENT_RESUMED, LED_COLOR_CYAN, LED_FLASH_MS, 0);
+    assert_led(SUPERVISOR_STATE_RECORDING, SUPERVISOR_EVENT_SHORT_PRESS, LED_COLOR_GREEN, LED_START_MS, 0);
+    assert_led(SUPERVISOR_STATE_RECORDING, SUPERVISOR_EVENT_RESUMED, LED_COLOR_CYAN, LED_START_MS, 0);
     assert_led(SUPERVISOR_STATE_FINALIZING, SUPERVISOR_EVENT_LONG_PRESS, LED_COLOR_BLUE, 0, 0);
     assert_led(SUPERVISOR_STATE_FINALIZING, SUPERVISOR_EVENT_RECORDING_FAILED, LED_COLOR_BLUE, 0, 0);
     assert_led(SUPERVISOR_STATE_FAULT, SUPERVISOR_EVENT_FAULT, LED_COLOR_FAULT, LED_FAULT_ON_MS, LED_FAULT_OFF_MS);
@@ -98,13 +98,30 @@ static void test_boot_and_resuming_leave_the_led_alone(void) {
     TEST_ASSERT_FALSE(supervisor_logic_led_for(SUPERVISOR_STATE_RESUMING, SUPERVISOR_EVENT_RESUME_FOUND, &pattern));
 }
 
-static void test_led_for_health(void) {
-    led_pattern_t pattern = supervisor_logic_led_for_health(true);
-    TEST_ASSERT_EQUAL_INT(LED_COLOR_GREEN, pattern.color);
-    TEST_ASSERT_EQUAL_UINT32(LED_FLASH_MS, pattern.on_ms);
-    TEST_ASSERT_EQUAL_UINT32(0, pattern.off_ms);
+static void assert_health_flashes(led_pattern_t pattern, led_color_t color) {
+    TEST_ASSERT_EQUAL_INT(color, pattern.color);
+    TEST_ASSERT_EQUAL_UINT32(LED_HEALTH_ON_MS, pattern.on_ms);
+    TEST_ASSERT_EQUAL_UINT32(LED_HEALTH_OFF_MS, pattern.off_ms);
+    TEST_ASSERT_EQUAL_UINT32(LED_HEALTH_FLASHES, pattern.num_flashes);
+}
 
-    pattern = supervisor_logic_led_for_health(false);
+static void test_led_for_health(void) {
+    assert_health_flashes(supervisor_logic_led_for_health(true), LED_COLOR_GREEN);
+    assert_health_flashes(supervisor_logic_led_for_health(false), LED_COLOR_RED);
+}
+
+static void test_start_and_health_look_different(void) {
+    led_pattern_t start;
+    TEST_ASSERT_TRUE(supervisor_logic_led_for(SUPERVISOR_STATE_RECORDING, SUPERVISOR_EVENT_SHORT_PRESS, &start));
+    led_pattern_t health = supervisor_logic_led_for_health(true);
+
+    TEST_ASSERT_EQUAL_INT(start.color, health.color);
+    TEST_ASSERT_NOT_EQUAL(start.on_ms, health.on_ms);
+    TEST_ASSERT_NOT_EQUAL(start.num_flashes, health.num_flashes);
+}
+
+static void test_card_full_is_one_red_flash(void) {
+    led_pattern_t pattern = supervisor_logic_led_for_card_full();
     TEST_ASSERT_EQUAL_INT(LED_COLOR_RED, pattern.color);
     TEST_ASSERT_EQUAL_UINT32(LED_FLASH_MS, pattern.on_ms);
     TEST_ASSERT_EQUAL_UINT32(0, pattern.off_ms);
@@ -118,4 +135,6 @@ void run_supervisor_logic_tests(void) {
     RUN_TEST(test_led_for_each_state_entered);
     RUN_TEST(test_boot_and_resuming_leave_the_led_alone);
     RUN_TEST(test_led_for_health);
+    RUN_TEST(test_start_and_health_look_different);
+    RUN_TEST(test_card_full_is_one_red_flash);
 }

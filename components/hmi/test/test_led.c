@@ -39,8 +39,17 @@ TEST_CASE("the LED shows every color and pattern (watch it)", "[hmi][manual]") {
     TEST_ASSERT_EQUAL(ESP_OK, led_off());
     hold(STEP_MS);
 
-    printf("green flash, %d ms\n", LED_FLASH_MS);
-    TEST_ASSERT_EQUAL(ESP_OK, led_flash(LED_COLOR_GREEN, LED_FLASH_MS));
+    printf("recording started: green, %d ms\n", LED_START_MS);
+    TEST_ASSERT_EQUAL(ESP_OK, led_flash(LED_COLOR_GREEN, LED_START_MS));
+    hold(LED_START_MS + STEP_MS);
+
+    printf("health ok: %d green flashes\n", LED_HEALTH_FLASHES);
+    led_pattern_t health = { LED_COLOR_GREEN, LED_HEALTH_ON_MS, LED_HEALTH_OFF_MS, LED_HEALTH_FLASHES };
+    TEST_ASSERT_EQUAL(ESP_OK, led_start(&health));
+    hold(STEP_MS);
+
+    printf("card full: red flash, %d ms\n", LED_FLASH_MS);
+    TEST_ASSERT_EQUAL(ESP_OK, led_flash(LED_COLOR_RED, LED_FLASH_MS));
     hold(STEP_MS);
 
     printf("white flash, %d ms\n", LED_RESULT_MS);
