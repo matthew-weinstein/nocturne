@@ -63,15 +63,13 @@ def make_segment(key, segment_index, frames_per_chunk):
 
     return bytes(data)
 
-def make_segment_from_packets(key, segment_index, packets, first_chunk=0):
-    """A segment, or a clip starting at first_chunk, holding the given packets 50 to a chunk."""
+def make_segment_from_packets(key, segment_index, packets):
+    """A segment holding the given packets 50 to a chunk."""
     data = bytearray(segment_header())
-    chunk_index = first_chunk
 
-    for start in range(0, len(packets), FRAMES_PER_CHUNK):
+    for chunk_index, start in enumerate(range(0, len(packets), FRAMES_PER_CHUNK)):
         plaintext = frame_packets(packets[start:start + FRAMES_PER_CHUNK])
         data += seal_record(key, segment_index, chunk_index, plaintext)
-        chunk_index += 1
 
     return bytes(data)
 

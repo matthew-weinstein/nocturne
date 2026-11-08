@@ -1,4 +1,4 @@
-# Event rules, design doc §17 9.12. Starting values; 9.23 tunes them against labels.
+# Event rules, design doc §17 9.12. Starting values; 9.20 tunes them against labels.
 
 [default]
 on = 0.5

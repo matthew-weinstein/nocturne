@@ -4,14 +4,13 @@ import numpy as np
 import pytest
 
 from decrypt_chunk import TEST_PASSPHRASE, TEST_SALT_MAC
-from nocturne_pc.audio import FRAME_SAMPLES, SessionAudio, decode_clip, decode_packets
+from nocturne_pc.audio import FRAME_SAMPLES, SessionAudio, decode_packets
 from segment_builder import SAMPLE_RATE_HZ, encode_opus, make_segment_from_packets
 
 SEGMENT_0_FRAMES = 100
 SEGMENT_1_FRAMES = 50
 TOTAL_FRAMES = SEGMENT_0_FRAMES + SEGMENT_1_FRAMES
 SLICE_TOLERANCE = 2e-3
-COLD_START_FRAMES = 25
 
 def make_signal():
     rng = np.random.default_rng(7)
@@ -107,22 +106,3 @@ def test_open_derives_the_key_from_the_device_id(session_dir, monkeypatch):
     audio = SessionAudio.open("20261017_0248", passphrase=TEST_PASSPHRASE)
 
     assert audio.num_frames(0) == SEGMENT_0_FRAMES
-
-def test_a_clip_decodes_under_its_segment_and_first_chunk(tmp_path, kat_key, packets, reference):
-    clip = make_segment_from_packets(kat_key, 0, packets[50:SEGMENT_0_FRAMES], first_chunk=1)
-    path = tmp_path / "seg_0000_c000001.opus.enc"
-    path.write_bytes(clip)
-
-    samples = decode_clip(path, kat_key)
-
-    assert len(samples) == 50 * FRAME_SAMPLES
-    settled = frames_of(samples, COLD_START_FRAMES, 24)
-    np.testing.assert_allclose(settled, frames_of(reference, 50 + COLD_START_FRAMES, 24), atol=SLICE_TOLERANCE)
-
-def test_a_clip_under_the_wrong_chunk_index_is_refused(tmp_path, kat_key, packets):
-    clip = make_segment_from_packets(kat_key, 0, packets[50:SEGMENT_0_FRAMES], first_chunk=1)
-    path = tmp_path / "seg_0000_c000002.opus.enc"
-    path.write_bytes(clip)
-
-    with pytest.raises(ValueError, match="failed its tag"):
-        decode_clip(path, kat_key)

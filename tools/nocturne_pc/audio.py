@@ -20,7 +20,6 @@ import functools
 import io
 import json
 import os
-import re
 from getpass import getpass
 from pathlib import Path
 
@@ -36,7 +35,6 @@ SAMPLE_RATE_HZ = 16000
 FRAME_SAMPLES = 320
 PREROLL_FRAMES = 25
 PASSPHRASE_ENV = "NOCTURNE_PASSPHRASE"
-CLIP_NAME = re.compile(r"seg_(\d{4})_c(\d{6})\.opus\.enc$")
 
 def read_passphrase():
     passphrase = os.environ.get(PASSPHRASE_ENV)
@@ -71,27 +69,12 @@ def decode_packets(packets, num_frames):
     samples[:num_copied] = decoded[:num_copied]
     return samples
 
-def open_segment(key, path, segment_index, first_chunk=0):
-    result = walk_segment(key, path, segment_index, first_chunk)
+def open_segment(key, path, segment_index):
+    result = walk_segment(key, path, segment_index)
     if result.errors:
         raise ValueError(f"{path.name}: {'; '.join(result.errors)}")
 
     return result
-
-def decode_clip(path, key):
-    """A clip (design doc 9.13), decoded whole. It starts cold, without preroll."""
-    path = Path(path)
-    match = CLIP_NAME.search(path.name)
-    if match is None:
-        raise ValueError(f"{path.name} is not named seg_NNNN_cNNNNNN.opus.enc")
-
-    segment_index = int(match.group(1))
-    first_chunk = int(match.group(2))
-    result = open_segment(key, path, segment_index, first_chunk)
-    if result.stop_reason:
-        raise ValueError(f"{path.name}: {result.stop_reason}; a clip holds only whole chunks")
-
-    return decode_packets(result.packets, len(result.packets))
 
 class SessionAudio:
     def __init__(self, session_dir, key):
