@@ -13,14 +13,12 @@ SILK, which VOIP or a lower bitrate would bring, needs about 25.
 A range runs on into later segments in index order. Across a resume that
 joins the audio either side of the outage; the clock anchors (§22) say where
 the gap was. The key is derived from the session's device_id and the
-passphrase in NOCTURNE_PASSPHRASE, or a prompt.
+passphrase (nocturne_pc.passphrase).
 """
 
 import functools
 import io
 import json
-import os
-from getpass import getpass
 from pathlib import Path
 
 import numpy as np
@@ -30,18 +28,11 @@ from decrypt_chunk import derive_key
 from decrypt_segment import SEGMENT_NAME, walk_segment
 from export_audio import write_ogg_opus_stream
 from nocturne_pc import data_root
+from nocturne_pc.passphrase import read_passphrase
 
 SAMPLE_RATE_HZ = 16000
 FRAME_SAMPLES = 320
 PREROLL_FRAMES = 25
-PASSPHRASE_ENV = "NOCTURNE_PASSPHRASE"
-
-def read_passphrase():
-    passphrase = os.environ.get(PASSPHRASE_ENV)
-    if passphrase:
-        return passphrase
-
-    return getpass("Nocturne passphrase: ")
 
 @functools.cache
 def device_key(device_id, passphrase):

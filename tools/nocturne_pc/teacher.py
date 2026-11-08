@@ -25,9 +25,10 @@ from collections import namedtuple
 import numpy as np
 
 from nocturne_pc import data_root
-from nocturne_pc.audio import FRAME_SAMPLES, SessionAudio, device_key, read_passphrase
+from nocturne_pc.audio import FRAME_SAMPLES, SessionAudio, device_key
 from nocturne_pc.db import connect
 from nocturne_pc.features import PATCH_SAMPLES, waveform_log_mel_patch
+from nocturne_pc.passphrase import read_passphrase
 from nocturne_pc.yamnet import Yamnet, class_names, group_members, group_scores
 
 SOURCE = "pc:yamnet-float"

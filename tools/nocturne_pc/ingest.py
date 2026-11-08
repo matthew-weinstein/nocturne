@@ -20,8 +20,9 @@ import time
 
 from decrypt_segment import SEGMENT_HEADER_BYTES, SEGMENT_NAME, walk_segment
 from nocturne_pc import data_root
-from nocturne_pc.audio import device_key, read_passphrase
+from nocturne_pc.audio import device_key
 from nocturne_pc.db import connect
+from nocturne_pc.passphrase import read_passphrase
 
 COMPLETION_MARKER = "session.json"
 TABLES = ("sessions", "resumes", "mutes", "segments")

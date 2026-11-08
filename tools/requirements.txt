@@ -1,5 +1,6 @@
 cryptography>=42
 duckdb>=1.1
 h5py>=3.10
+keyring>=25
 numpy>=1.24
 soundfile>=0.12
