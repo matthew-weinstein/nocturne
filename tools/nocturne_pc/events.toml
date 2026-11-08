@@ -1,0 +1,69 @@
+# Event rules, design doc §17 9.12. Starting values; 9.23 tunes them against labels.
+
+[default]
+on = 0.5
+off = 0.3
+min_ms = 0
+merge_ms = 1920
+
+[classes.speech]
+merge_ms = 3840
+
+[classes.snoring]
+on = 0.4
+off = 0.2
+merge_ms = 5760
+
+[classes.breathing]
+merge_ms = 3840
+
+[classes.gasp]
+on = 0.3
+off = 0.2
+merge_ms = 0
+
+[classes.cough]
+on = 0.3
+off = 0.2
+
+[classes.sneeze]
+on = 0.4
+
+[classes.movement]
+on = 0.3
+off = 0.15
+merge_ms = 3840
+
+[classes.footsteps]
+merge_ms = 3840
+
+[classes.door]
+on = 0.3
+merge_ms = 0
+
+[classes.water]
+min_ms = 1920
+merge_ms = 5760
+
+[classes.alarm]
+on = 0.4
+merge_ms = 5760
+
+[classes.music]
+min_ms = 2880
+merge_ms = 5760
+
+[classes.traffic]
+merge_ms = 3840
+
+[classes.dog]
+
+[classes.weather]
+min_ms = 9600
+merge_ms = 9600
+
+[classes.bird]
+
+[classes.silence]
+min_ms = 10000
+merge_ms = 0

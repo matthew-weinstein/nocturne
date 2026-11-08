@@ -100,6 +100,32 @@ CREATE TABLE IF NOT EXISTS scored (
     PRIMARY KEY (session_id, source)
 );
 
+CREATE TABLE IF NOT EXISTS events (
+    session_id VARCHAR NOT NULL,
+    source VARCHAR NOT NULL,
+    class VARCHAR NOT NULL,
+    start_segment INTEGER NOT NULL,
+    start_frame INTEGER NOT NULL,
+    end_segment INTEGER NOT NULL,
+    end_frame INTEGER NOT NULL,
+    start_unix DOUBLE,
+    end_unix DOUBLE,
+    duration_ms INTEGER NOT NULL,
+    windows INTEGER NOT NULL,
+    peak_score REAL NOT NULL,
+    mean_score REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS evented (
+    session_id VARCHAR NOT NULL,
+    source VARCHAR NOT NULL,
+    rules_sha256 VARCHAR NOT NULL,
+    scored_unix BIGINT NOT NULL,
+    events INTEGER NOT NULL,
+    derived_unix BIGINT NOT NULL,
+    PRIMARY KEY (session_id, source)
+);
+
 CREATE OR REPLACE VIEW runs AS
 SELECT session_id, 0 AS run, 0 AS first_segment, started_unix AS anchor_unix
 FROM sessions
