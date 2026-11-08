@@ -30,8 +30,8 @@ off = 0.2
 on = 0.4
 
 [classes.movement]
-on = 0.3
-off = 0.15
+on = 0.5
+off = 0.3
 merge_ms = 3840
 
 [classes.footsteps]
