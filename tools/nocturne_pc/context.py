@@ -12,8 +12,9 @@ Needs location.toml at the data root (never in the repo):
 
 Every night in nights gets a night_context row, all rebuilt each run: the
 night's date (the local date of bedtime less 12 hours, so 04:10 belongs to
-the evening before), its weekday, whether a free day follows, the UTC offset
-at bedtime, that evening's sunset and the next morning's sunrise. Sunrise and
+the evening before), its weekday, whether a free day follows, the zone and
+the UTC offset at bedtime, the latest clock change in the past two weeks,
+that evening's sunset and the next morning's sunrise. Sunrise and
 sunset are computed here (NOAA's solar equations), not fetched.
 
 Weather is hourly from Open-Meteo's historical forecast API (free, no key),
@@ -40,7 +41,9 @@ from nocturne_pc.db import connect
 LOCATION_NAME = "location.toml"
 LOCATION_KEYS = ("latitude", "longitude", "timezone")
 LOCATION_DIGITS = 2
-CONTEXT_COLUMNS = ("session_id", "night_of", "weekday", "free_day_after", "utc_offset_min", "sunset_unix", "sunrise_unix")
+CONTEXT_COLUMNS = ("session_id", "night_of", "weekday", "free_day_after", "timezone", "utc_offset_min",
+                   "clock_shift_min", "days_since_clock_change", "sunset_unix", "sunrise_unix")
+CLOCK_CHANGE_LOOKBACK_DAYS = 14
 WEATHER_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
 WEATHER_TIMEOUT_S = 30
 WEATHER_VARIABLES = {
@@ -137,18 +140,35 @@ def sun_event_unix(day, latitude, longitude, rising):
 
     return midnight + minutes * 60
 
+def noon_offset_min(day, zone):
+    noon = datetime(day.year, day.month, day.day, 12, tzinfo=zone)
+    return int(noon.utcoffset().total_seconds() // 60)
+
+def clock_change(night_of, zone):
+    """(nights since, minutes the clocks moved) for the latest change on or before the night of night_of, else Nones."""
+    for days in range(CLOCK_CHANGE_LOOKBACK_DAYS):
+        morning = night_of + timedelta(days=1 - days)
+        shift = noon_offset_min(morning, zone) - noon_offset_min(morning - timedelta(days=1), zone)
+        if shift != 0:
+            return days, shift
+    return None, None
+
 def night_context(session_id, bedtime_unix, location):
     zone = ZoneInfo(location.timezone)
     bedtime = datetime.fromtimestamp(bedtime_unix, zone)
     night_of = datetime.fromtimestamp(bedtime_unix - NIGHT_SHIFT_S, zone).date()
     weekday = night_of.isoweekday()
     morning = night_of + timedelta(days=1)
+    days_since_change, shift = clock_change(night_of, zone)
     return {
         "session_id": session_id,
         "night_of": night_of,
         "weekday": weekday,
         "free_day_after": weekday in FREE_DAY_EVES,
+        "timezone": location.timezone,
         "utc_offset_min": int(bedtime.utcoffset().total_seconds() // 60),
+        "clock_shift_min": shift,
+        "days_since_clock_change": days_since_change,
         "sunset_unix": sun_event_unix(night_of, location.latitude, location.longitude, rising=False),
         "sunrise_unix": sun_event_unix(morning, location.latitude, location.longitude, rising=True),
     }

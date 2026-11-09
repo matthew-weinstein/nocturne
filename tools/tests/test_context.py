@@ -6,6 +6,7 @@ import pytest
 
 from nocturne_pc.context import (
     Location,
+    clock_change,
     date_runs,
     derive_context,
     load_location,
@@ -54,6 +55,8 @@ def test_a_small_hours_bedtime_belongs_to_the_evening_before():
     assert row["weekday"] == 6
     assert row["free_day_after"]
     assert row["utc_offset_min"] == -300
+    assert row["timezone"] == "America/Toronto"
+    assert (row["days_since_clock_change"], row["clock_shift_min"]) == (7, -60)
     assert local(row["sunset_unix"], TORONTO.timezone).date() == date(2026, 11, 7)
     assert local(row["sunrise_unix"], TORONTO.timezone).date() == date(2026, 11, 8)
 
@@ -65,6 +68,16 @@ def test_a_sunday_night_has_a_working_day_after_and_summer_time_its_offset():
     assert row["weekday"] == 7
     assert not row["free_day_after"]
     assert row["utc_offset_min"] == -240
+
+@pytest.mark.parametrize("night_of, expected", [
+    (date(2026, 10, 31), (0, -60)),
+    (date(2026, 11, 6), (6, -60)),
+    (date(2026, 3, 7), (0, 60)),
+    (date(2026, 3, 6), (None, None)),
+    (date(2026, 8, 1), (None, None)),
+])
+def test_the_latest_clock_change_is_found(night_of, expected):
+    assert clock_change(night_of, ZoneInfo(TORONTO.timezone)) == expected
 
 def test_the_location_file_loads(tmp_path):
     path = tmp_path / "location.toml"

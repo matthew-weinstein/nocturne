@@ -1,0 +1,9 @@
+# Trend settings, design doc §22 (9.15).
+
+sleep_target_h = 8
+
+illness_factor = 2
+illness_min_count = 3
+illness_min_baseline_nights = 7
+
+predictor_min_nights = 14

@@ -64,6 +64,7 @@ python -m nocturne_pc.teacher
 python -m nocturne_pc.events
 python -m nocturne_pc.nights
 python -m nocturne_pc.context
+python -m nocturne_pc.trends
 ```
 
 Nights live in `~/nocturne-data`, encrypted.
