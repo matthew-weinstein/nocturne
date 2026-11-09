@@ -178,6 +178,44 @@ CREATE TABLE IF NOT EXISTS loud_moments (
     top_class VARCHAR
 );
 
+CREATE TABLE IF NOT EXISTS night_context (
+    session_id VARCHAR PRIMARY KEY,
+    night_of DATE NOT NULL,
+    weekday TINYINT NOT NULL,
+    free_day_after BOOLEAN NOT NULL,
+    utc_offset_min SMALLINT NOT NULL,
+    sunset_unix DOUBLE,
+    sunrise_unix DOUBLE
+);
+
+CREATE TABLE IF NOT EXISTS weather (
+    hour_unix BIGINT PRIMARY KEY,
+    temperature_c REAL,
+    humidity_pct REAL,
+    pressure_hpa REAL,
+    precipitation_mm REAL,
+    fetched_unix BIGINT NOT NULL
+);
+
+CREATE OR REPLACE VIEW night_weather AS
+SELECT night_context.session_id,
+       COUNT(weather.hour_unix) AS weather_hours,
+       AVG(weather.temperature_c) AS temperature_c,
+       MIN(weather.temperature_c) AS temperature_min_c,
+       MAX(weather.temperature_c) AS temperature_max_c,
+       AVG(weather.humidity_pct) AS humidity_pct,
+       AVG(weather.pressure_hpa) AS pressure_hpa,
+       ARG_MAX(weather.pressure_hpa, weather.hour_unix) - ARG_MIN(weather.pressure_hpa, weather.hour_unix)
+           AS pressure_change_hpa,
+       SUM(weather.precipitation_mm) FILTER (WHERE weather.hour_unix > sessions.started_unix // 3600 * 3600)
+           AS precipitation_mm
+FROM night_context
+JOIN sessions ON sessions.session_id = night_context.session_id
+LEFT JOIN weather
+       ON weather.hour_unix >= sessions.started_unix // 3600 * 3600
+      AND weather.hour_unix <= (sessions.ended_unix + 3599) // 3600 * 3600
+GROUP BY night_context.session_id;
+
 CREATE OR REPLACE VIEW runs AS
 SELECT session_id, 0 AS run, 0 AS first_segment, started_unix AS anchor_unix
 FROM sessions
