@@ -1,4 +1,4 @@
-"""Load each synced session's metadata into DuckDB (design doc 9.5).
+"""Load each synced session's metadata into DuckDB.
 
     cd tools
     python -m nocturne_pc.ingest

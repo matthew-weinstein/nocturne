@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Decrypt Nocturne segment files chunk by chunk (design doc 4.4).
+"""Decrypt Nocturne segment files chunk by chunk.
 
 A segment is an 8-byte NCT2 header followed by AES-256-GCM chunk records. The
 reader walks the records in order, opens each under the AAD implied by the
 segment index and the chunk's position, and stops at the first record that
 runs past EOF or fails its tag. Everything before that point is kept.
 
-    python tools/decrypt_segment.py --salt-mac 44b176a468c8 seg_0003.opus.enc
-    python tools/decrypt_segment.py --salt-mac 44b176a468c8 sessions/20260906_2312 --out-dir plain/
+    python tools/decrypt_segment.py --salt-mac <mac> seg_0003.opus.enc
+    python tools/decrypt_segment.py --salt-mac 44b176a468c8 sessions/<session_id> --out-dir plain/
 
 The passphrase comes from --passphrase or the NOCTURNE_PASSPHRASE environment
 variable. The MAC is the one key_manager logs when it derives the device key.

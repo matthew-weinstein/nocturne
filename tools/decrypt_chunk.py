@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Decrypt one Nocturne chunk record and check the round trip (design doc 4.2).
+"""Decrypt one Nocturne chunk record and check the round trip.
 
 The on-target crypto test seals a known chunk on the AES accelerator and
 prints it as hex between two markers; `pytest test_app` feeds that record to

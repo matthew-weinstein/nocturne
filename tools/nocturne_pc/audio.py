@@ -1,7 +1,7 @@
-"""Decrypt and decode a session's audio on demand (design doc 9.5).
+"""Decrypt and decode a session's audio on demand.
 
     from nocturne_pc.audio import SessionAudio
-    audio = SessionAudio.open("20261107_1754")
+    audio = SessionAudio.open("20260101_0000")
     samples = audio.decode(1, first_frame=250, num_frames=500)
 
 Sessions stay encrypted in audio/; nothing decoded is written to disk. A
@@ -11,9 +11,9 @@ stretch of a whole-session decode. The device's CELT frames settle in 8;
 SILK, which VOIP or a lower bitrate would bring, needs about 25.
 
 A range runs on into later segments in index order. Across a resume that
-joins the audio either side of the outage; the clock anchors (§22) say where
-the gap was. The key is derived from the session's device_id and the
-passphrase (nocturne_pc.passphrase).
+joins the audio either side of the outage; the clock anchors in
+session.json say where the gap was. The key is derived from the session's
+device_id and the passphrase (nocturne_pc.passphrase).
 """
 
 import functools

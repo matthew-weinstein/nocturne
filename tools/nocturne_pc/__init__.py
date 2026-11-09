@@ -1,4 +1,4 @@
-"""Nocturne's PC pipeline (design doc §22)."""
+"""Nocturne's PC pipeline."""
 
 import os
 from pathlib import Path

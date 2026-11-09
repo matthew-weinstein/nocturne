@@ -1,4 +1,4 @@
-"""Events from window scores by per-class rules (design doc 9.12).
+"""Events from window scores by per-class rules.
 
     cd tools
     python -m nocturne_pc.events

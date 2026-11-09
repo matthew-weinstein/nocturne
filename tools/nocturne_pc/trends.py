@@ -1,4 +1,4 @@
-"""Trends over the nights, as DuckDB views (design doc 9.15, §22).
+"""Trends over the nights, as DuckDB views.
 
     cd tools
     python -m nocturne_pc.trends

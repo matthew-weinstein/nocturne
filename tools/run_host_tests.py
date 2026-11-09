@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and run every host test project on the linux target (design doc 20).
+"""Build and run every host test project on the linux target.
 
 Each components/<name>/host_test/ is a standalone IDF project whose
 sdkconfig.defaults selects the linux target. This builds each one with idf.py,

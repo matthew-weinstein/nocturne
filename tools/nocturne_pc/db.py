@@ -1,4 +1,4 @@
-"""The pipeline's DuckDB database, nocturne.duckdb at the data root (design doc §22)."""
+"""The pipeline's DuckDB database, nocturne.duckdb at the data root."""
 
 from pathlib import Path
 

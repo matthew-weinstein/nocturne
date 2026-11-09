@@ -1,4 +1,4 @@
-"""YAMNet's log-mel front end, the reference for audio_features.c (design doc §21).
+"""YAMNet's log-mel front end, the reference for audio_features.c.
 
 A patch is 96 frames of a 25 ms periodic Hann window every 10 ms, a 512-point
 FFT magnitude, triangular mel bands on the HTK scale, and log(mel + 0.001),

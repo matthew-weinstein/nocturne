@@ -1,4 +1,4 @@
-"""Night context: calendar, daylight and weather (design doc 9.14, §22).
+"""Night context: calendar, daylight and weather.
 
     cd tools
     python -m nocturne_pc.context
@@ -6,9 +6,9 @@
 
 Needs location.toml at the data root (never in the repo):
 
-    latitude = 43.65
-    longitude = -79.38
-    timezone = "America/Toronto"
+    latitude = 51.5
+    longitude = -0.13
+    timezone = "Europe/London"
 
 Every night in nights gets a night_context row, all rebuilt each run: the
 night's date (the local date of bedtime less 12 hours, so 04:10 belongs to

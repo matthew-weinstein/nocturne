@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write the stored vectors that hold audio_features.c to nocturne_pc.features (design doc 9.6).
+"""Write the stored vectors that hold audio_features.c to nocturne_pc.features.
 
     python tools/model/make_feature_vectors.py
 

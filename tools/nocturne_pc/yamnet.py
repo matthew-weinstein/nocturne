@@ -1,4 +1,4 @@
-"""YAMNet's core in numpy: log-mel patches in, 521 class scores out (design doc 9.11).
+"""YAMNet's core in numpy: log-mel patches in, 521 class scores out.
 
     from nocturne_pc.yamnet import Yamnet
     model = Yamnet.load()

@@ -1,4 +1,4 @@
-"""Pull finished sessions from B2 into audio/, still encrypted (design doc 9.4).
+"""Pull finished sessions from B2 into audio/, still encrypted.
 
     cd tools
     python -m nocturne_pc.sync

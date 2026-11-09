@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the fault-injection firmware for the failure-matrix system tests (design doc 15, 20).
+"""Build the fault-injection firmware for the failure-matrix system tests.
 
 Each tests/system/faults/sdkconfig.<fault> is layered on the system-test
 overlay and built into build-fault-<fault>/ with its own sdkconfig, so the

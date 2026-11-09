@@ -1,4 +1,4 @@
-"""Night metrics, one row per session and source (design doc 9.13, §22).
+"""Night metrics, one row per session and source.
 
     cd tools
     python -m nocturne_pc.nights
@@ -10,8 +10,8 @@ the rules (nights.toml) have changed since; --force derives every one.
 Sessions shorter than min_session_min get no row.
 
 Bedtime and up are the button presses. Everything else is inferred from sound:
-onset is the start of the first quiet stretch (brief blips ignored), wake the first alarm or else
-the start of the activity that runs into up. Events with no clock time (after
+onset is the start of the first quiet stretch (brief blips ignored), wake the
+first alarm or else the start of the activity that runs into up. Events with no clock time (after
 a missing segment) are left out. Loud moments are listed per window in
 loud_moments. A session is replaced whole in one transaction.
 """
@@ -100,7 +100,7 @@ def settings_digest(settings):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 def full_scale_db_spl(sample_shift):
-    """The sound level at digital full scale for a sample shift (§2): about 78 dB SPL at 9."""
+    """The sound level at digital full scale for a sample shift: about 78 dB SPL at 9."""
     return MIC_REFERENCE_DB_SPL - MIC_SENSITIVITY_DBFS - (PCM_BITS - sample_shift) * DB_PER_BIT
 
 def join_spans(spans, gap_s):

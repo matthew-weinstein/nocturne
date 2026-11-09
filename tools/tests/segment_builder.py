@@ -1,4 +1,4 @@
-"""Builds Nocturne segment files in memory, in the layout the device writes (design doc 10)."""
+"""Builds Nocturne segment files in memory, in the layout the device writes."""
 
 import io
 

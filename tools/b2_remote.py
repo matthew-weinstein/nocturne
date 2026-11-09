@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Set up the read-only rclone remote the PC pipeline uses (design doc 9.1).
+"""Set up the read-only rclone remote the PC pipeline uses.
 
 The device's key can only write. The PC gets its own key that can only list
 and read, scoped to the same bucket, created once with a key that can manage

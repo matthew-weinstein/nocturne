@@ -6,8 +6,8 @@ packets are joined in index order into one Ogg Opus stream. No decoder is
 needed for that step, so the .opus file plays anywhere Opus does (VLC, a
 browser). --wav also decodes it to 16 kHz mono PCM through soundfile.
 
-    python tools/export_audio.py --salt-mac 44b176a468c8 sessions/20260906_2312 --out night.opus
-    python tools/export_audio.py --salt-mac 44b176a468c8 sessions/20260906_2312 --out night.opus --wav
+    python tools/export_audio.py --salt-mac <mac> sessions/<session_id> --out night.opus
+    python tools/export_audio.py --salt-mac 44b176a468c8 sessions/<session_id> --out night.opus --wav
 
 Segments are joined end to end. A resumed session has real gaps where the
 device was down, and the export does not mark them.

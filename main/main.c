@@ -483,7 +483,6 @@ void app_main(void)
         }
     }
 
-    // Uncomment when finished development
     // do_ota();
 
     if (sd_card_mount() != ESP_OK) {

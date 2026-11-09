@@ -1,18 +1,17 @@
-"""Score every 0.96 s window of each ingested session with float YAMNet (design doc 9.11).
+"""Score every 0.96 s window of each ingested session with float YAMNet.
 
     cd tools
     python -m nocturne_pc.teacher
     python -m nocturne_pc.teacher --force
 
-A session is scored once it is ingested (9.5) and still in audio/; --force
+A session is scored once it is ingested and still in audio/; --force
 rescores every one. Its audio is decoded a segment at a time and cut into
 windows of 48 frames, each read as a 0.975 s log-mel patch (240 samples into
 the next window, zero-padded at the end of a stretch). A stretch is audio
 with no break: a resume, a missing or corrupt segment starts a new one, and
-its windows restart there. A window holding any muted frame is not scored,
-as the board would not run it.
+its windows restart there. A window holding any muted frame is not scored.
 
-Each window gives the YAMNet class groups (design doc §21) into windows, the
+Each window gives the YAMNet class groups into windows, the
 top five of 521 classes into teacher, and RMS and peak in dBFS into levels.
 A session is replaced whole in one transaction.
 """
