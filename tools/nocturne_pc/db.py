@@ -126,6 +126,58 @@ CREATE TABLE IF NOT EXISTS evented (
     PRIMARY KEY (session_id, source)
 );
 
+CREATE TABLE IF NOT EXISTS nights (
+    session_id VARCHAR NOT NULL,
+    source VARCHAR NOT NULL,
+    bedtime_unix DOUBLE NOT NULL,
+    up_unix DOUBLE NOT NULL,
+    time_in_bed_min DOUBLE NOT NULL,
+    onset_unix DOUBLE,
+    onset_latency_min DOUBLE,
+    wake_unix DOUBLE NOT NULL,
+    lie_in_min DOUBLE NOT NULL,
+    sleep_min DOUBLE,
+    efficiency DOUBLE,
+    midpoint_unix DOUBLE,
+    restless_bouts INTEGER,
+    restless_min DOUBLE,
+    snoring_min DOUBLE NOT NULL,
+    snoring_share DOUBLE,
+    snoring_per_hour DOUBLE NOT NULL,
+    snoring_peak_db DOUBLE,
+    snoring_worst_hour_unix BIGINT,
+    breathing_pauses INTEGER,
+    breathing_pauses_per_hour DOUBLE,
+    coughs INTEGER NOT NULL,
+    sneezes INTEGER NOT NULL,
+    sleep_talk INTEGER,
+    bathroom_trips INTEGER,
+    alarms INTEGER NOT NULL,
+    first_alarm_unix DOUBLE,
+    last_alarm_unix DOUBLE,
+    snooze_span_min DOUBLE,
+    alarm_to_up_min DOUBLE,
+    noise_floor_db DOUBLE,
+    loud_moments INTEGER NOT NULL,
+    outage_min DOUBLE NOT NULL,
+    muted_min DOUBLE NOT NULL,
+    missing_min DOUBLE NOT NULL,
+    rules_sha256 VARCHAR NOT NULL,
+    events_derived_unix BIGINT NOT NULL,
+    derived_unix BIGINT NOT NULL,
+    PRIMARY KEY (session_id, source)
+);
+
+CREATE TABLE IF NOT EXISTS loud_moments (
+    session_id VARCHAR NOT NULL,
+    segment INTEGER NOT NULL,
+    first_frame INTEGER NOT NULL,
+    moment_unix DOUBLE,
+    peak_db REAL NOT NULL,
+    rms_db REAL NOT NULL,
+    top_class VARCHAR
+);
+
 CREATE OR REPLACE VIEW runs AS
 SELECT session_id, 0 AS run, 0 AS first_segment, started_unix AS anchor_unix
 FROM sessions

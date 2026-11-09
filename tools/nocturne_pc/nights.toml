@@ -1,0 +1,22 @@
+# Night metric rules, design doc §22. Starting values; 9.20 tunes them against labels.
+
+min_session_min = 10
+
+onset_activity = ["movement", "speech", "footsteps"]
+onset_quiet_min = 20
+onset_min_event_s = 2
+
+wake_activity = ["movement", "speech", "footsteps", "door", "water"]
+wake_gap_min = 5
+
+restless_join_s = 30
+restless_min_s = 30
+
+alarm_gap_s = 60
+bathroom_window_min = 10
+
+pause_min_s = 10
+pause_max_s = 120
+snort_score = 0.3
+
+loud_peak_db = 70
