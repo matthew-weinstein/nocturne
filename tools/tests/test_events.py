@@ -65,8 +65,10 @@ def test_the_shipped_rules_load_and_name_only_real_classes():
     rules = load_rules(RULES_PATH)
 
     assert "other" not in rules
+    assert "breathing" not in rules
     assert rules["cough"] == Rule(on=0.3, off=0.2, min_ms=0, merge_ms=1920)
     assert rules["silence"].min_ms == 10000
+    assert rules["movement"].min_rise_db == 3
 
 @pytest.mark.parametrize("config, message", [
     ({"classes": {"coughs": {}}, "default": {"on": 0.5, "off": 0.3, "min_ms": 0, "merge_ms": 0}}, "not a class"),
@@ -74,6 +76,7 @@ def test_the_shipped_rules_load_and_name_only_real_classes():
     ({"classes": {"cough": {"on": 0.2, "off": 0.3, "min_ms": 0, "merge_ms": 0}}}, "off <= on"),
     ({"classes": {"cough": {"on": 0.5, "off": 0.3, "min_ms": 0, "merge_ms": 0, "gap": 1}}}, "unknown setting gap"),
     ({"classes": {"cough": {"on": "high", "off": 0.3, "min_ms": 0, "merge_ms": 0}}}, "must be a number"),
+    ({"classes": {"cough": {"on": 0.5, "off": 0.3, "min_ms": 0, "merge_ms": 0, "min_rise_db": -1}}}, "cannot be negative"),
     ({"class": {}}, "unknown section"),
 ])
 def test_bad_rules_are_refused(config, message):
@@ -208,3 +211,28 @@ def test_an_event_after_a_missing_segment_is_stored_without_clock_times(connecti
 
     assert connection.execute("SELECT start_segment, start_unix, end_unix, peak_score FROM events").fetchall() == [
         (1, None, None, pytest.approx(0.9))]
+
+def add_levels(connection, segment, rms_values, first_frame=0):
+    for index, rms_dbfs in enumerate(rms_values):
+        connection.execute("INSERT INTO levels VALUES (?, ?, ?, ?, ?)",
+                           [SESSION_ID, segment, first_frame + index * WINDOW_FRAMES, rms_dbfs, rms_dbfs + 10])
+
+def test_a_window_too_close_to_the_floor_is_not_an_event(connection):
+    add_session(connection, [15000])
+    add_scores(connection, "movement", 0, [0.9, 0.1, 0.9, 0.1] + [0.0] * 6)
+    add_levels(connection, 0, [-37, -37, -33.5, -37] + [-37] * 6)
+    rules = {"movement": RULE._replace(min_rise_db=3)}
+
+    rows = derive_session(connection, SESSION_ID, SOURCE, rules)
+
+    assert [row[4] for row in rows] == [2 * WINDOW_FRAMES]
+
+def test_without_levels_or_a_rise_gate_nothing_is_gated(connection):
+    add_session(connection, [15000])
+    add_scores(connection, "movement", 0, [0.9, 0.1])
+    gated = derive_session(connection, SESSION_ID, SOURCE, {"movement": RULE._replace(min_rise_db=3)})
+    add_levels(connection, 0, [-37, -37])
+    ungated = derive_session(connection, SESSION_ID, SOURCE, {"movement": RULE})
+
+    assert len(gated) == 1
+    assert len(ungated) == 1

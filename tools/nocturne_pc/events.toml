@@ -14,9 +14,6 @@ on = 0.4
 off = 0.2
 merge_ms = 5760
 
-[classes.breathing]
-merge_ms = 3840
-
 [classes.gasp]
 on = 0.3
 off = 0.2
@@ -33,6 +30,7 @@ on = 0.4
 on = 0.5
 off = 0.3
 merge_ms = 3840
+min_rise_db = 3
 
 [classes.footsteps]
 merge_ms = 3840

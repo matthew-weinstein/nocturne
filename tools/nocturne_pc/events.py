@@ -10,7 +10,10 @@ rules have changed since it was last derived; --force derives every one.
 
 A class's events are runs of back-to-back windows scoring at least its off
 threshold that reach its on threshold somewhere. Events closer than merge_ms
-join, then any shorter than min_ms is dropped. Nothing joins across a stretch
+join, then any shorter than min_ms is dropped. A class with min_rise_db
+counts a window only if its RMS is at least that far above the session's noise
+floor (the 10th percentile), so the mic's own hiss scored as a sound is not
+an event. Nothing joins across a stretch
 break (a resume, or a missing or corrupt segment), and a class with no rule
 gets no events. A session and source is replaced whole in one transaction.
 """
@@ -31,13 +34,15 @@ from nocturne_pc.teacher import FRAME_MS, WINDOW_FRAMES, stretches
 from nocturne_pc.yamnet import CLASS_GROUPS, OTHER_GROUP
 
 RULES_PATH = Path(__file__).with_name("events.toml")
-RULE_KEYS = ("on", "off", "min_ms", "merge_ms")
+RULE_KEYS = ("on", "off", "min_ms", "merge_ms", "min_rise_db")
+OPTIONAL_KEYS = {"min_rise_db": 0}
+FLOOR_QUANTILE = 0.1
 SECTIONS = ("default", "classes")
 EVENT_COLUMNS = ("session_id", "source", "class", "start_segment", "start_frame", "end_segment", "end_frame",
                  "start_unix", "end_unix", "duration_ms", "windows", "peak_score", "mean_score")
 CLOCK_COLUMNS = ("start_unix", "end_unix")
 
-Rule = namedtuple("Rule", RULE_KEYS)
+Rule = namedtuple("Rule", RULE_KEYS, defaults=[OPTIONAL_KEYS["min_rise_db"]])
 Event = namedtuple("Event", ["start", "end", "windows", "peak", "total"])
 Stretch = namedtuple("Stretch", ["segments", "offsets", "frames"])
 
@@ -70,6 +75,8 @@ def make_rule(name, default, overrides):
             value = overrides[key]
         elif key in default:
             value = default[key]
+        elif key in OPTIONAL_KEYS:
+            value = OPTIONAL_KEYS[key]
         else:
             raise ValueError(f"{name}: no {key}, and none in [default]")
         if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -79,8 +86,8 @@ def make_rule(name, default, overrides):
     rule = Rule(**values)
     if not 0.0 <= rule.off <= rule.on <= 1.0:
         raise ValueError(f"{name}: needs 0 <= off <= on <= 1, got off {rule.off} and on {rule.on}")
-    if rule.min_ms < 0 or rule.merge_ms < 0:
-        raise ValueError(f"{name}: min_ms and merge_ms cannot be negative")
+    if rule.min_ms < 0 or rule.merge_ms < 0 or rule.min_rise_db < 0:
+        raise ValueError(f"{name}: min_ms, merge_ms and min_rise_db cannot be negative")
     return rule
 
 def rules_digest(rules):
@@ -198,6 +205,22 @@ def segment_clock(segment_rows, runs):
                 elapsed += frames_by_segment[segment]
     return clock
 
+def gate_scores(score_rows, rules, floor_dbfs):
+    """score_rows without their RMS, a score zeroed where its class's rise gate fails.
+
+    score_rows are (class, segment, first_frame, score, rms_dbfs). A window
+    with no level, or a session with no floor, is not gated.
+    """
+    gated = []
+    for class_name, segment, first_frame, score, rms_dbfs in score_rows:
+        rule = rules.get(class_name)
+        quiet = (rule is not None and rule.min_rise_db > 0 and rms_dbfs is not None and floor_dbfs is not None
+                 and rms_dbfs - floor_dbfs < rule.min_rise_db)
+        if quiet:
+            score = 0.0
+        gated.append((class_name, segment, first_frame, score))
+    return gated
+
 def clock_unix(clock, segment, frame):
     start = clock.get(segment)
     if start is None:
@@ -260,9 +283,14 @@ def derive_session(connection, session_id, source, rules):
 
     layouts = stretch_layouts(segment_rows, run_starts)
     clock = segment_clock(segment_rows, runs)
+    floor_dbfs = connection.execute(
+        f"SELECT quantile_cont(rms_dbfs, {FLOOR_QUANTILE}) FROM levels WHERE session_id = ?", [session_id]).fetchone()[0]
     score_rows = connection.execute(
-        "SELECT class, segment, first_frame, score FROM windows WHERE session_id = ? AND source = ? "
-        "ORDER BY class, segment, first_frame", [session_id, source]).fetchall()
+        "SELECT w.class, w.segment, w.first_frame, w.score, l.rms_dbfs FROM windows w "
+        "LEFT JOIN levels l ON l.session_id = w.session_id AND l.segment = w.segment AND l.first_frame = w.first_frame "
+        "WHERE w.session_id = ? AND w.source = ? ORDER BY w.class, w.segment, w.first_frame",
+        [session_id, source]).fetchall()
+    score_rows = gate_scores(score_rows, rules, floor_dbfs)
 
     rows = []
     for class_name, per_stretch in class_windows(score_rows, layouts).items():
