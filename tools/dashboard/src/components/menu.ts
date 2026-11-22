@@ -4,6 +4,7 @@ export interface MenuChoice {
   value: string;
   label: string;
   note?: string;
+  meter?: number;
 }
 
 /** A button that opens a list of radio choices: arrows, Home and End move, Escape closes to the button. */
@@ -36,6 +37,13 @@ export function choiceMenu(
         tabindex: "-1",
       },
       h("span", {}, choice.label),
+      choice.meter === undefined
+        ? null
+        : h(
+            "span",
+            { class: "meter", "aria-hidden": "true" },
+            h("i", { style: `width:${Math.round(Math.min(1, choice.meter) * 100)}%` }),
+          ),
       choice.note ? h("span", { class: "n" }, choice.note) : null,
     );
     item.addEventListener("click", () => {

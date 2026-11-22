@@ -133,20 +133,24 @@
 
 /* segmented control */
 .segmented {
+  --seg: min(100px, calc((100vw - 40px) / 3));
   position: relative;
+}
+.segmented:has(> :nth-child(5)) {
+  --seg: min(100px, calc((100vw - 40px) / 4));
 }
 .segmented .ind {
   position: absolute;
   left: 3px;
   top: 3px;
-  width: 100px;
+  width: var(--seg);
   height: 38px;
   border: 1px solid transparent;
   border-radius: 999px;
   background: var(--key);
   box-shadow: var(--lift);
   box-sizing: border-box;
-  transform: translateX(calc(var(--at, 0) * 100px));
+  transform: translateX(calc(var(--at, 0) * var(--seg)));
   transition: transform var(--snap-ms) var(--snap);
 }
 .segmented .ind::after {
@@ -166,7 +170,7 @@
 }
 .segmented a {
   position: relative;
-  width: 100px;
+  width: var(--seg);
   height: 38px;
   display: grid;
   place-items: center;

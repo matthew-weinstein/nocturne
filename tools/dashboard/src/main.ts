@@ -5,13 +5,21 @@ import "@fontsource/albert-sans/latin-600.css";
 import "./tokens.css";
 import "./components.css";
 import "./night.css";
-import { fetchNight, fetchNights, fetchStatus } from "./api.ts";
+import "./month.css";
+import "./trends.css";
+import { fetchMonth, fetchNight, fetchNights, fetchStatus, fetchTrends } from "./api.ts";
 import { h } from "./dom.ts";
 import { clockText } from "./view/format.ts";
+import { OVER_TIME, RANGES, type RangeName } from "./view/trends.ts";
+import { monthPage } from "./pages/month.ts";
 import { nightPage } from "./pages/night.ts";
+import { trendsPage } from "./pages/trends.ts";
 import { header, notBuilt, type Page } from "./pages/shell.ts";
 
 const root = document.getElementById("app") as HTMLElement;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const ALL_FROM = "2000-01-01";
+const ALL_TO = "2999-12-31";
 let current: Page | null = null;
 let rendering = 0;
 
@@ -41,10 +49,21 @@ function failure(message: string): Page {
 async function pageFor(hash: string, synced: string | null): Promise<Page> {
   const parts = hash.replace(/^#\/?/, "").split("/");
   if (parts[0] === "30") {
-    return notBuilt("month", "30 days", synced);
+    let last: string | null = null;
+    if (parts[1] !== undefined && ISO_DATE.test(parts[1])) {
+      last = parts[1];
+    }
+    return monthPage(await fetchMonth(last), synced);
   }
   if (parts[0] === "trends") {
-    return notBuilt("trends", "Trends", synced);
+    let range: RangeName = "month";
+    for (const candidate of RANGES) {
+      if (candidate.name === parts[1]) {
+        range = candidate.name;
+      }
+    }
+    const choice = { range, metric: parts[2] ?? "sleep", factor: parts[3] ?? OVER_TIME };
+    return trendsPage(await fetchTrends(ALL_FROM, ALL_TO), choice, synced);
   }
   if (parts[0] === "label") {
     return notBuilt("label", "Label", synced);

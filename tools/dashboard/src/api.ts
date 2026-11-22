@@ -112,9 +112,59 @@ export interface NightDetail {
   weather: Weather | null;
   events: SoundEvent[];
   outages: { start_unix: number; end_unix: number }[];
-  levels: { start_unix: number; bin_s: number; peak_db: (number | null)[] };
+  levels: Levels;
   previous: string | null;
   next: string | null;
+}
+
+export interface Levels {
+  start_unix: number;
+  bin_s: number;
+  peak_db: (number | null)[];
+}
+
+export interface MonthNight {
+  session_id: string;
+  night_of: string;
+  weekday: number;
+  free_day_after: boolean;
+  timezone: string;
+  bedtime_clock_min: number;
+  onset_clock_min: number | null;
+  wake_clock_min: number | null;
+  up_clock_min: number;
+  midpoint_clock_min: number | null;
+  sunrise_clock_min: number | null;
+  sleep_min: number | null;
+  onset_latency_min: number | null;
+  efficiency: number | null;
+  bedtime_unix: number;
+  up_unix: number;
+  levels: Levels;
+}
+
+export interface Month {
+  first: string;
+  last: string;
+  earliest: string | null;
+  latest: string | null;
+  sleep_target_min: number | null;
+  debt_14_min: number | null;
+  nights: MonthNight[];
+}
+
+export type TrendNight = Record<string, number | string | boolean | null> & {
+  night_of: string;
+  session_id: string;
+  free_day_after: boolean;
+  weekday: number;
+};
+
+export interface Trends {
+  sleep_target_min: number | null;
+  earliest: string | null;
+  latest: string | null;
+  nights: TrendNight[];
 }
 
 export interface Status {
@@ -136,6 +186,17 @@ export function fetchNights(): Promise<NightSummary[]> {
 
 export function fetchNight(sessionId: string): Promise<NightDetail> {
   return getJson(`api/night/${encodeURIComponent(sessionId)}`);
+}
+
+export function fetchMonth(last: string | null): Promise<Month> {
+  if (last === null) {
+    return getJson("api/month");
+  }
+  return getJson(`api/month?to=${encodeURIComponent(last)}`);
+}
+
+export function fetchTrends(first: string, last: string): Promise<Trends> {
+  return getJson(`api/trends?from=${encodeURIComponent(first)}&to=${encodeURIComponent(last)}`);
 }
 
 export function fetchStatus(): Promise<Status> {

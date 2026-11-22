@@ -1,0 +1,137 @@
+.segmented button {
+  position: relative;
+  width: var(--seg);
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  color: var(--faint);
+  transition: color 0.4s var(--ease);
+}
+.segmented button[aria-pressed="true"],
+.segmented button:hover {
+  color: var(--ink);
+}
+.segmented button:focus-visible {
+  outline-offset: -4px;
+  border-radius: 999px;
+}
+
+.trends {
+  display: grid;
+  grid-template-rows: auto auto minmax(260px, 1fr);
+  height: clamp(560px, calc(100vh - 116px), 784px);
+  padding-top: 36px;
+}
+.sentence {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 2px 4px;
+  margin: 0;
+  font-size: 26px;
+  font-weight: 300;
+  animation: rise 0.45s var(--ease) backwards;
+}
+.sentence .quiet {
+  height: 44px;
+  padding: 0 10px;
+  font-size: 26px;
+  font-weight: 300;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.sentence .word {
+  color: var(--faint);
+}
+.sentence .menu {
+  top: calc(100% + 4px);
+  letter-spacing: 0;
+}
+.answer {
+  text-align: center;
+  margin-top: 22px;
+  animation: rise 0.45s var(--ease) 0.035s backwards;
+}
+.figure {
+  font-size: 76px;
+  font-weight: 300;
+  letter-spacing: -0.05em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.answer .line {
+  margin: 12px 0 0;
+  font-size: 14px;
+  color: var(--faint);
+}
+.chart {
+  position: relative;
+  margin-top: 28px;
+  animation: fade 0.45s var(--ease) 0.08s backwards;
+}
+.chart canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.menu .meter {
+  width: 44px;
+  height: 4px;
+  margin-left: auto;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.menu .meter i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--acc);
+}
+.factor-menu .menu .n {
+  min-width: 86px;
+  text-align: right;
+}
+
+@media (max-width: 900px) {
+  .trends {
+    height: auto;
+    grid-template-rows: auto auto 360px;
+    padding-top: 20px;
+  }
+  .figure {
+    font-size: clamp(44px, 13vw, 76px);
+  }
+  .sentence,
+  .sentence .quiet {
+    font-size: 21px;
+  }
+}
+
+@media (max-width: 560px) {
+  .sentence {
+    position: relative;
+  }
+  .sentence .menu-anchor {
+    position: static;
+  }
+  .sentence .menu {
+    right: 0;
+    width: max-content;
+    max-width: calc(100vw - 32px);
+    margin: 0 auto;
+    transform-origin: top center;
+  }
+  .sentence .menu [role^="menuitem"] {
+    gap: 10px;
+  }
+  .factor-menu .menu .n {
+    min-width: 0;
+  }
+}
