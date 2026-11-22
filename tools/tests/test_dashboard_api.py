@@ -16,6 +16,7 @@ from nocturne_pc.dashboard_api import (
     clip_frames,
     level_envelope,
     list_nights,
+    month,
     neighbours,
     night_detail,
     trend_nights,
@@ -142,13 +143,49 @@ def test_the_envelope_keeps_each_bins_loudest_peak_inside_the_span():
     assert level_envelope(levels, 100, 130, 10, 80) == [60, 45, None]
 
 def test_trends_cover_the_asked_nights_oldest_first(connection):
-    rows = trend_nights(connection, SOURCE, date(2026, 11, 8), date(2026, 11, 30))
+    trends = trend_nights(connection, SOURCE, date(2026, 11, 8), date(2026, 11, 30))
 
     nights = []
-    for row in rows:
+    for row in trends["nights"]:
         nights.append(row["night_of"])
     assert nights == ["2026-11-08", "2026-11-09"]
-    assert rows[0]["sleep_min"] == 5 * 60 - 15
+    assert trends["nights"][0]["sleep_min"] == 5 * 60 - 15
+    assert trends["sleep_target_min"] == load_settings().sleep_target_h * 60
+    assert (trends["earliest"], trends["latest"]) == ("2026-11-07", "2026-11-09")
+
+def test_a_month_ends_at_the_latest_night_by_default(connection):
+    days = month(connection, SOURCE)
+
+    assert (days["first"], days["last"]) == ("2026-10-11", "2026-11-09")
+    nights = []
+    for night in days["nights"]:
+        nights.append(night["night_of"])
+    assert nights == ["2026-11-09", "2026-11-08", "2026-11-07"]
+
+def test_a_month_ends_where_asked(connection):
+    days = month(connection, SOURCE, date(2026, 11, 8))
+
+    assert days["last"] == "2026-11-08"
+    assert len(days["nights"]) == 2
+    assert (days["earliest"], days["latest"]) == ("2026-11-07", "2026-11-09")
+
+def test_each_night_of_a_month_has_its_levels(connection):
+    days = month(connection, SOURCE, date(2026, 11, 7), bin_s=60)
+
+    night = days["nights"][0]
+    assert night["levels"]["start_unix"] == BEDTIME
+    assert night["levels"]["bin_s"] == 60
+    assert len(night["levels"]["peak_db"]) == 8 * 60
+    assert night["levels"]["peak_db"][0] == round(-30 + full_scale_db_spl(9), 1)
+    assert "sample_shift" not in night
+
+def test_a_months_sleep_debt_is_the_last_nights_fortnight(connection):
+    target = load_settings().sleep_target_h * 60
+
+    days = month(connection, SOURCE, date(2026, 11, 8))
+
+    assert days["sleep_target_min"] == target
+    assert days["debt_14_min"] == pytest.approx(2 * target - (8 * 60 - 15) - (5 * 60 - 15))
 
 def test_clips_are_limited_to_ten_minutes():
     assert clip_frames(0) == 1
@@ -208,7 +245,14 @@ def test_the_server_answers_each_page_as_json(server):
 
     code, _, body = get(server, "/api/trends?from=2026-11-01&to=2026-11-30")
     assert code == 200
-    assert len(json.loads(body)) == 3
+    assert len(json.loads(body)["nights"]) == 3
+
+    code, _, body = get(server, "/api/month")
+    assert code == 200
+    assert json.loads(body)["last"] == "2026-11-09"
+
+    code, _, body = get(server, "/api/month?to=2026-11-08")
+    assert len(json.loads(body)["nights"]) == 2
 
     code, _, body = get(server, "/api/status")
     assert json.loads(body) == {"last_ingested_unix": 5, "sessions": 3}
@@ -217,6 +261,7 @@ def test_the_server_refuses_bad_requests(server):
     assert get(server, "/api/night/20990101_0000")[0] == 404
     assert get(server, "/api/night/..%2Fsecret")[0] == 404
     assert get(server, "/api/trends?from=soon&to=later")[0] == 400
+    assert get(server, "/api/month?to=soon")[0] == 400
     assert get(server, "/api/audio/20261108_0410?segment=0&frame=0&frames=50")[0] == 503
     assert get(server, "/api/nowhere")[0] == 404
 

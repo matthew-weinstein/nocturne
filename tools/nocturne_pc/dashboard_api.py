@@ -8,7 +8,7 @@ levels dB SPL; the front end formats them.
 import io
 import math
 import wave
-from datetime import date
+from datetime import date, timedelta
 
 import numpy as np
 
@@ -17,6 +17,8 @@ from nocturne_pc.nights import full_scale_db_spl
 
 DEFAULT_SAMPLE_SHIFT = 9
 ENVELOPE_BIN_S = 15
+MONTH_BIN_S = 120
+MONTH_DAYS = 30
 MAX_CLIP_FRAMES = 30000
 
 SESSION_FIELDS = (
@@ -158,12 +160,76 @@ def night_detail(connection, session_id, source, bin_s=ENVELOPE_BIN_S):
         "next": following,
     }
 
+def sleep_target_min(connection):
+    row = connection.execute("SELECT sleep_target_h FROM trend_settings").fetchone()
+    if row is None:
+        return None
+    return row[0] * 60
+
+def night_range(connection, source):
+    return connection.execute(
+        "SELECT MIN(night_of), MAX(night_of) FROM trend_nights WHERE source = ?", [source]).fetchone()
+
 def trend_nights(connection, source, first_night, last_night):
-    """Every column of trend_nights for the nights from first to last, oldest first."""
-    return fetch_dicts(connection.execute(
+    """Every column of trend_nights for the nights from first to last, oldest first, and the sleep target."""
+    nights = fetch_dicts(connection.execute(
         "SELECT * EXCLUDE (source) FROM trend_nights WHERE source = ? AND night_of BETWEEN ? AND ? "
         "ORDER BY night_of",
         [source, first_night, last_night]))
+    earliest, latest = night_range(connection, source)
+    return {
+        "sleep_target_min": sleep_target_min(connection),
+        "earliest": json_value(earliest),
+        "latest": json_value(latest),
+        "nights": nights,
+    }
+
+def month(connection, source, last_night=None, days=MONTH_DAYS, bin_s=MONTH_BIN_S):
+    """The days up to last_night (default the latest night): each night's times, metrics and level envelope."""
+    earliest, latest = night_range(connection, source)
+    if last_night is None:
+        last_night = latest
+    if last_night is None:
+        last_night = date.today()
+    first_night = last_night - timedelta(days=days - 1)
+
+    nights = fetch_dicts(connection.execute(
+        "SELECT trend_nights.session_id, trend_nights.night_of, trend_nights.weekday, "
+        "trend_nights.free_day_after, trend_nights.timezone, "
+        "trend_nights.bedtime_clock_min, trend_nights.onset_clock_min, trend_nights.wake_clock_min, "
+        "trend_nights.up_clock_min, trend_nights.midpoint_clock_min, trend_nights.sunrise_clock_min, "
+        "trend_nights.sleep_min, trend_nights.onset_latency_min, trend_nights.efficiency, "
+        "nights.bedtime_unix, nights.up_unix, sessions.sample_shift "
+        "FROM trend_nights "
+        "JOIN nights ON nights.session_id = trend_nights.session_id AND nights.source = trend_nights.source "
+        "JOIN sessions ON sessions.session_id = trend_nights.session_id "
+        "WHERE trend_nights.source = ? AND trend_nights.night_of BETWEEN ? AND ? "
+        "ORDER BY trend_nights.night_of DESC",
+        [source, first_night, last_night]))
+    for night in nights:
+        sample_shift = night.pop("sample_shift")
+        if sample_shift is None:
+            sample_shift = DEFAULT_SAMPLE_SHIFT
+        night["levels"] = night_levels(connection, night["session_id"], night["bedtime_unix"],
+                                       night["up_unix"], sample_shift, bin_s)
+
+    debt = connection.execute(
+        "SELECT debt_14_min, nights_14 FROM trend_sleep_debt WHERE source = ? AND night_of <= ? "
+        "AND night_of >= ? ORDER BY night_of DESC LIMIT 1",
+        [source, last_night, last_night - timedelta(days=13)]).fetchone()
+    debt_14_min = None
+    if debt is not None:
+        debt_14_min = debt[0]
+
+    return {
+        "first": first_night.isoformat(),
+        "last": last_night.isoformat(),
+        "earliest": json_value(earliest),
+        "latest": json_value(latest),
+        "sleep_target_min": sleep_target_min(connection),
+        "debt_14_min": debt_14_min,
+        "nights": nights,
+    }
 
 def status(connection):
     last_ingested, num_sessions = connection.execute(

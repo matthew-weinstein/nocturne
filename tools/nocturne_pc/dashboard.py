@@ -12,6 +12,7 @@ demand and never written to disk; the passphrase is read once at startup.
     GET /api/status
     GET /api/nights
     GET /api/night/<session_id>
+    GET /api/month?to=2026-11-01                                     (to optional)
     GET /api/trends?from=2026-10-01&to=2026-11-01
     GET /api/audio/<session_id>?segment=3&frame=120&frames=250    (WAV)
 """
@@ -32,7 +33,7 @@ import duckdb
 
 from nocturne_pc import data_root
 from nocturne_pc.audio import SAMPLE_RATE_HZ, SessionAudio
-from nocturne_pc.dashboard_api import clip_frames, list_nights, night_detail, status, trend_nights, wav_bytes
+from nocturne_pc.dashboard_api import clip_frames, list_nights, month, night_detail, status, trend_nights, wav_bytes
 from nocturne_pc.passphrase import read_passphrase
 from nocturne_pc.teacher import SOURCE
 
@@ -144,6 +145,16 @@ def make_handler(database_path, audio_cache, static_dir):
                 return
             if parts == ["nights"]:
                 self.send_json(list_nights(connection, SOURCE))
+                return
+            if parts == ["month"]:
+                last = None
+                text = query_text(query, "to")
+                if text is not None:
+                    last = parse_night(text)
+                    if last is None:
+                        self.send_error_json(HTTPStatus.BAD_REQUEST, "to must be a date")
+                        return
+                self.send_json(month(connection, SOURCE, last))
                 return
             if parts == ["trends"]:
                 first = parse_night(query_text(query, "from"))
