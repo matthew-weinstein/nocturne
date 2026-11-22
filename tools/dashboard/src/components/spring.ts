@@ -28,4 +28,8 @@ export class Spring {
       this.value += this.velocity * dt;
     }
   }
+
+  settled(): boolean {
+    return Math.abs(this.value - this.target) < 0.01 && Math.abs(this.velocity) < 0.01;
+  }
 }
