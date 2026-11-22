@@ -45,6 +45,13 @@ python tools/b2_remote.py --key-id <keyId>
 cd tools && python -m nocturne_pc.passphrase    # saved to your keychain, asked once
 ```
 
+The dashboard is a desktop app. Build it once (needs Node 22), then open
+`tools/dist/Nocturne/Nocturne.exe`:
+
+```sh
+cd tools && python build_app.py
+```
+
 Then put your coordinates, for the weather and sunrise times, in
 `~/nocturne-data/location.toml`:
 
