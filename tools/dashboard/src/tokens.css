@@ -1,0 +1,268 @@
+:root {
+  --bg: #06070b;
+  --ink: #eef0f5;
+  --mute: rgba(232, 235, 244, 0.66);
+  --faint: rgba(232, 235, 244, 0.52);
+  --ghost: rgba(232, 235, 244, 0.14);
+  --acc: #8fa5ff;
+  --sun: #e9b37e;
+  --danger: #e58a8a;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --sink: 70ms cubic-bezier(0.3, 0, 0.6, 1);
+
+  --press: linear(
+    0,
+    0.056,
+    0.194,
+    0.38,
+    0.583,
+    0.771,
+    0.942,
+    1.075,
+    1.168,
+    1.22,
+    1.237,
+    1.225,
+    1.193,
+    1.15,
+    1.101,
+    1.057,
+    1.016,
+    0.984,
+    0.961,
+    0.948,
+    0.944,
+    0.946,
+    0.954,
+    0.964,
+    0.975,
+    0.986,
+    0.996,
+    1.003,
+    1.009,
+    1.012,
+    1.013,
+    1.013,
+    1.011,
+    1.009,
+    1.006,
+    1.003,
+    1.001,
+    0.999,
+    0.998,
+    0.997,
+    0.997,
+    0.997,
+    0.997,
+    0.998,
+    0.999,
+    0.999,
+    1,
+    1,
+    1
+  );
+  --press-ms: 621ms;
+  --snap: linear(
+    0,
+    0.024,
+    0.09,
+    0.178,
+    0.282,
+    0.397,
+    0.508,
+    0.614,
+    0.715,
+    0.802,
+    0.876,
+    0.94,
+    0.989,
+    1.027,
+    1.055,
+    1.073,
+    1.084,
+    1.088,
+    1.087,
+    1.082,
+    1.075,
+    1.066,
+    1.056,
+    1.046,
+    1.037,
+    1.028,
+    1.02,
+    1.013,
+    1.007,
+    1.002,
+    0.998,
+    0.996,
+    0.994,
+    0.993,
+    0.992,
+    0.992,
+    0.993,
+    0.993,
+    0.994,
+    0.995,
+    0.996,
+    0.997,
+    0.997,
+    0.998,
+    0.999,
+    0.999,
+    1,
+    1,
+    1
+  );
+  --snap-ms: 536ms;
+  --soft: linear(
+    0,
+    0.02,
+    0.072,
+    0.142,
+    0.229,
+    0.322,
+    0.418,
+    0.508,
+    0.597,
+    0.678,
+    0.752,
+    0.814,
+    0.869,
+    0.916,
+    0.954,
+    0.984,
+    1.007,
+    1.024,
+    1.036,
+    1.044,
+    1.048,
+    1.05,
+    1.049,
+    1.047,
+    1.043,
+    1.039,
+    1.034,
+    1.03,
+    1.025,
+    1.021,
+    1.016,
+    1.013,
+    1.01,
+    1.007,
+    1.004,
+    1.003,
+    1.001,
+    1,
+    0.999,
+    0.998,
+    0.998,
+    0.998,
+    0.998,
+    0.998,
+    0.998,
+    0.998,
+    0.998,
+    0.998,
+    1
+  );
+  --soft-ms: 714ms;
+
+  --well:
+    linear-gradient(180deg, #000, #030305) padding-box,
+    linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0.035),
+        rgba(255, 255, 255, 0.12)
+      )
+      border-box;
+  --key:
+    linear-gradient(180deg, #16181e, #0c0d11) padding-box,
+    linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0.17),
+        rgba(255, 255, 255, 0.03) 55%,
+        rgba(255, 255, 255, 0.07)
+      )
+      border-box;
+  --glass:
+    linear-gradient(180deg, #111318, #0a0b0f) padding-box,
+    linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0.14),
+        rgba(255, 255, 255, 0.03)
+      )
+      border-box;
+  --lift: 0 1px 1px rgba(0, 0, 0, 0.5), 0 6px 16px -6px rgba(0, 0, 0, 0.8);
+
+  color-scheme: dark;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+}
+
+body {
+  background:
+    radial-gradient(
+      640px 560px at 50% 54%,
+      rgba(92, 112, 200, 0.085),
+      transparent 70%
+    ),
+    var(--bg);
+  background-attachment: fixed;
+  color: var(--ink);
+  font-family: "Albert Sans", system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+a {
+  color: var(--ink);
+}
+
+a:focus-visible,
+button:focus-visible,
+[tabindex]:focus-visible {
+  outline: 1.5px solid var(--acc);
+  outline-offset: 3px;
+}
+
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition-duration: 1ms !important;
+  }
+}

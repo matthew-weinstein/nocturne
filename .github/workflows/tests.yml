@@ -27,6 +27,21 @@ jobs:
       - run: pip install -r tools/requirements.txt pytest
       - run: pytest tools/tests
 
+  dashboard:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+
   firmware-build:
     runs-on: ubuntu-latest
     container: espressif/idf:v6.1
