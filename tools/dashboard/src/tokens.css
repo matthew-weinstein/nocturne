@@ -254,7 +254,7 @@ button:focus-visible,
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(6px);
   }
 }
 

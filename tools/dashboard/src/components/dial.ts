@@ -10,11 +10,12 @@ export const RING = 262;
 
 const BLOOM_REACH = RING + 40;
 const PROFILE_R = RING + HALF_WIDTH + 2;
-const SWEEP_DELAY_MS = 200;
-const SWEEP_MS = 2400;
-const BREATHE_DELAY_MS = 2600;
+export const SWEEP_DELAY_MS = 60;
+export const SWEEP_MS = 950;
+const BREATHE_DELAY_MS = SWEEP_DELAY_MS + SWEEP_MS;
 const BREATHE_MS = 7000;
-const FACE_MS = 1400;
+const BREATHE_START = Math.acos(-1 / 3) / Math.PI;
+const FACE_MS = 450;
 const HAND_FADE_MS = 350;
 
 export interface Span {
@@ -48,15 +49,15 @@ export function minuteUnder(
   return Math.round(minute * 4) / 4;
 }
 
-function easeInOut(t: number): number {
-  if (t < 0.5) {
-    return 4 * t * t * t;
-  }
-  return 1 - Math.pow(-2 * t + 2, 3) / 2;
-}
-
 function easeOut(t: number): number {
   return 1 - Math.pow(1 - t, 3);
+}
+
+/** Seconds after the dial appears at which the sweep reaches this minute from bed. */
+export function sweepReaches(minuteFromBed: number, spanMin: number): number {
+  const fraction = clamp01(minuteFromBed / Math.max(1, spanMin));
+  const t = 1 - Math.cbrt(1 - fraction);
+  return (SWEEP_DELAY_MS + t * SWEEP_MS) / 1000;
 }
 
 function clamp01(value: number): number {
@@ -374,11 +375,11 @@ export class Dial {
     let sweep = 1;
     if (!still) {
       faceAlpha = easeOut(clamp01(since / FACE_MS));
-      sweep = easeInOut(clamp01((since - SWEEP_DELAY_MS) / SWEEP_MS));
+      sweep = easeOut(clamp01((since - SWEEP_DELAY_MS) / SWEEP_MS));
     }
     let breathe = 0.75;
     if (since > BREATHE_DELAY_MS) {
-      const phase = ((since - BREATHE_DELAY_MS) / BREATHE_MS) % 2;
+      const phase = ((since - BREATHE_DELAY_MS) / BREATHE_MS + BREATHE_START) % 2;
       let wave = phase;
       if (phase > 1) {
         wave = 2 - phase;
@@ -397,7 +398,7 @@ export class Dial {
       wedge(
         clip,
         view.bedMin,
-        view.bedMin + Math.max(0.01, sweep * 1440),
+        view.bedMin + Math.max(0.01, sweep * (view.spanMin + 2)),
         BLOOM_REACH + 40,
       );
       context.clip(clip);

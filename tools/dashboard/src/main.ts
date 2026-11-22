@@ -73,17 +73,36 @@ async function render(): Promise<void> {
     page.leave();
     return;
   }
-  const swap = (): void => {
-    current?.leave();
-    current = page;
-    root.replaceChildren(page.element);
-  };
-  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (current !== null && "startViewTransition" in document && !reduced) {
-    document.startViewTransition(swap);
-  } else {
-    swap();
+  const was = navIndex();
+  current?.leave();
+  current = page;
+  root.replaceChildren(page.element);
+  slideNav(was);
+}
+
+function navIndex(): string | null {
+  const nav = root.querySelector<HTMLElement>(".segmented");
+  if (nav === null) {
+    return null;
   }
+  return nav.style.getPropertyValue("--at");
+}
+
+function slideNav(from: string | null): void {
+  const nav = root.querySelector<HTMLElement>(".segmented");
+  const indicator = nav?.querySelector<HTMLElement>(".ind");
+  if (nav === null || indicator === null || indicator === undefined || from === null) {
+    return;
+  }
+  const to = nav.style.getPropertyValue("--at");
+  if (from === to) {
+    return;
+  }
+  indicator.style.transition = "none";
+  nav.style.setProperty("--at", from);
+  indicator.getBoundingClientRect();
+  indicator.style.transition = "";
+  nav.style.setProperty("--at", to);
 }
 
 window.addEventListener("hashchange", render);

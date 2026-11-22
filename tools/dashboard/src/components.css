@@ -178,20 +178,8 @@
 .segmented a[aria-current] {
   color: var(--ink);
 }
-.segmented:has(a:hover) a[aria-current]:not(:hover) {
-  color: var(--faint);
-}
 .segmented a:hover {
   color: var(--ink);
-}
-.segmented:has(a:nth-of-type(1):hover) .ind {
-  transform: translateX(0);
-}
-.segmented:has(a:nth-of-type(2):hover) .ind {
-  transform: translateX(100px);
-}
-.segmented:has(a:nth-of-type(3):hover) .ind {
-  transform: translateX(200px);
 }
 
 /* menu */
@@ -338,7 +326,7 @@
 
 /* metric */
 .metric {
-  animation: rise 1s var(--ease) backwards;
+  animation: rise 0.45s var(--ease) backwards;
 }
 .metric .v {
   font-size: 40px;

@@ -7,6 +7,7 @@ import {
   RING,
   WIDTH,
   polar,
+  sweepReaches,
   type Span,
 } from "../components/dial.ts";
 import { choiceMenu, type MenuChoice } from "../components/menu.ts";
@@ -63,7 +64,7 @@ function mark(
     "div",
     {
       class: sun ? "mark sun" : "mark",
-      style: `${at(x, y)};transform:translate(${shiftX}%,${shiftY.toFixed(0)}%);text-align:${align};animation-delay:${delay}s`,
+      style: `${at(x, y)};transform:translate(${shiftX}%,${shiftY.toFixed(0)}%);text-align:${align};animation-delay:${delay.toFixed(3)}s`,
     },
     h("div", { class: "k" }, key),
     h("div", { class: "t" }, value),
@@ -164,6 +165,10 @@ function infoDialog(
 
 export function nightPage(detail: NightDetail, synced: string | null): Page {
   const view = nightView(detail);
+  const sunDelay = (clockMin: number): number => {
+    const fromBed = (clockMin - view.dial.bedMin + 1440) % 1440;
+    return sweepReaches(Math.min(fromBed, view.dial.spanMin), view.dial.spanMin);
+  };
   let filter = EVERYTHING;
   let cursor: number | null = null;
   let playing: { row: EventRow; audio: HTMLAudioElement } | null = null;
@@ -174,15 +179,16 @@ export function nightPage(detail: NightDetail, synced: string | null): Page {
   });
   const big = h("div", { class: "big" }, parts(view.big, "u"));
   const sub = h("div", { class: "sub" }, view.bigLabel);
+  const span = view.dial.spanMin;
   const marks: HTMLElement[] = [
-    mark(view.dial.bedMin, "Bed", view.bed, 0.3, false),
-    mark(view.dial.bedMin + view.dial.spanMin, "Up", view.up, 2.4, false),
+    mark(view.dial.bedMin, "Bed", view.bed, sweepReaches(0, span), false),
+    mark(view.dial.bedMin + span, "Up", view.up, sweepReaches(span, span), false),
   ];
   if (view.sunrise !== null && view.dial.sunriseMin !== null) {
-    marks.push(mark(view.dial.sunriseMin, "Sunrise", view.sunrise, 1.3, true));
+    marks.push(mark(view.dial.sunriseMin, "Sunrise", view.sunrise, sunDelay(view.dial.sunriseMin), true));
   }
   if (view.sunset !== null && view.dial.sunsetMin !== null) {
-    marks.push(mark(view.dial.sunsetMin, "Sunset", view.sunset, 1.3, true));
+    marks.push(mark(view.dial.sunsetMin, "Sunset", view.sunset, sunDelay(view.dial.sunsetMin), true));
   }
   const dialBox = h(
     "div",
@@ -414,7 +420,7 @@ export function nightPage(detail: NightDetail, synced: string | null): Page {
         "div",
         {
           class: "metric",
-          style: `animation-delay:${(0.5 + index * 0.09).toFixed(2)}s`,
+          style: `animation-delay:${(index * 0.035).toFixed(3)}s`,
         },
         h("div", {}, values),
         h("div", { class: "l" }, insight.label),

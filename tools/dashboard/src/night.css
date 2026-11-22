@@ -44,7 +44,7 @@
   );
   -webkit-mask-image: radial-gradient(closest-side, #000 55%, transparent);
   mask-image: radial-gradient(closest-side, #000 55%, transparent);
-  animation: fade 2s var(--ease) 0.3s backwards;
+  animation: fade 0.6s var(--ease) backwards;
 }
 .dial .hour {
   position: absolute;
@@ -53,13 +53,13 @@
   transform: translate(-50%, -50%);
   white-space: nowrap;
   pointer-events: none;
-  animation: fade 1.2s var(--ease) 0.4s backwards;
+  animation: fade 0.45s var(--ease) 0.1s backwards;
 }
 .dial .mark {
   position: absolute;
   white-space: nowrap;
   pointer-events: none;
-  animation: fade 1s var(--ease) backwards;
+  animation: fade 0.35s var(--ease) backwards;
 }
 .dial .mark .k {
   font-size: 12px;
@@ -106,6 +106,7 @@
 }
 
 .night .sounds {
+  animation: rise 0.45s var(--ease) 0.08s backwards;
   height: 440px;
   display: flex;
   flex-direction: column;
