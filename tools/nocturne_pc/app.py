@@ -12,6 +12,8 @@ every page works but sounds don't play.
 """
 
 import os
+import sys
+from pathlib import Path
 
 import webview
 
@@ -23,6 +25,8 @@ BACKGROUND = "#06070B"
 WINDOW_SIZE = (1440, 900)
 SCREEN_SHARE = 0.92
 MIN_SIZE = (360, 560)
+ICON = Path(__file__).resolve().parent / "app_icon.ico"
+APP_ID = "Nocturne.Dashboard"
 
 def saved_passphrase():
     passphrase = os.environ.get(PASSPHRASE_ENV)
@@ -39,7 +43,31 @@ def window_size():
         height = min(height, int(screen.height * SCREEN_SHARE))
     return width, height
 
+def claim_taskbar_identity():
+    """Groups the window under Nocturne, so the taskbar shows its icon rather than python's or a stale cached one."""
+    if sys.platform != "win32":
+        return
+    import ctypes
+
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
+
+def use_icon(window):
+    """Sets the window's and taskbar's icon from the .ico itself, not Windows' cached copy."""
+    if sys.platform != "win32" or not ICON.exists():
+        return
+    from System import Action
+    from System.Drawing import Icon
+
+    form = window.native
+    icon = Icon(str(ICON))
+
+    def apply():
+        form.Icon = icon
+
+    form.Invoke(Action(apply))
+
 def main():
+    claim_taskbar_identity()
     audio_cache = None
     passphrase = saved_passphrase()
     if passphrase:
@@ -48,8 +76,9 @@ def main():
     server = serve_in_background(default_database(), audio_cache)
     port = server.server_address[1]
     width, height = window_size()
-    webview.create_window(TITLE, f"http://{HOST}:{port}/", width=width, height=height, min_size=MIN_SIZE,
-                          background_color=BACKGROUND)
+    window = webview.create_window(TITLE, f"http://{HOST}:{port}/", width=width, height=height,
+                                   min_size=MIN_SIZE, background_color=BACKGROUND)
+    window.events.shown += use_icon
     try:
         webview.start()
     finally:

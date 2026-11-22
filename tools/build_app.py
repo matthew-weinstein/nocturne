@@ -5,12 +5,14 @@
 
 Builds the front end (npm ci, npm run build in dashboard/), then packages
 nocturne_pc.app with PyInstaller into dist/Nocturne/, Nocturne.exe on
-Windows. PyInstaller runs in its own environment (build/venv, made from
+Windows, with the icon from make_app_icon.py. PyInstaller runs in its own environment (build/venv, made from
 requirements-app.txt on the first build), so nothing else installed in
 this Python is bundled. The app reads the same data root and passphrase as
-the pipeline.
+the pipeline. On Windows it also adds a Start menu shortcut, so the app
+shows up in search and can be pinned.
 """
 
+import hashlib
 import os
 import shutil
 import subprocess
@@ -40,6 +42,45 @@ def run_in_build_venv():
     result = subprocess.run([str(python), str(Path(__file__).resolve())])
     sys.exit(result.returncode)
 
+def tag_shortcut(shortcut):
+    """Gives the shortcut the app's taskbar ID, so a pinned or launched Nocturne groups with its window."""
+    import pythoncom
+    from win32com.propsys import propsys, pscon
+    from win32com.shell import shellcon
+
+    from nocturne_pc.app import APP_ID
+
+    store = propsys.SHGetPropertyStoreFromParsingName(str(shortcut), None, shellcon.GPS_READWRITE,
+                                                      propsys.IID_IPropertyStore)
+    store.SetValue(pscon.PKEY_AppUserModel_ID, propsys.PROPVARIANTType(APP_ID, pythoncom.VT_LPWSTR))
+    store.Commit()
+
+def versioned_icon(app_dir):
+    """A copy of the icon named after its contents: Windows caches a shortcut's icon by path."""
+    source = TOOLS / "nocturne_pc" / "app_icon.ico"
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()[:10]
+    for old in app_dir.glob("icon-*.ico"):
+        old.unlink()
+    copy = app_dir / f"icon-{digest}.ico"
+    shutil.copyfile(source, copy)
+    return copy
+
+def add_start_menu_shortcut(target):
+    programs = Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs"
+    shortcut = programs / f"{NAME}.lnk"
+    script = (
+        "$shell = New-Object -ComObject WScript.Shell; "
+        f"$link = $shell.CreateShortcut('{shortcut}'); "
+        f"$link.TargetPath = '{target}'; "
+        f"$link.WorkingDirectory = '{target.parent}'; "
+        f"$link.IconLocation = '{versioned_icon(target.parent)},0'; "
+        "$link.Description = 'Nocturne sleep recordings'; "
+        "$link.Save()"
+    )
+    subprocess.run(["powershell", "-NoProfile", "-Command", script], check=True)
+    tag_shortcut(shortcut)
+    print(f"added {shortcut}")
+
 def npm(*arguments):
     executable = shutil.which("npm")
     if executable is None:
@@ -60,6 +101,7 @@ def main():
         str(TOOLS / "nocturne_pc" / "app.py"),
         "--name", NAME,
         "--windowed",
+        "--icon", str(TOOLS / "nocturne_pc" / "app_icon.ico"),
         "--noconfirm",
         "--clean",
         "--paths", str(TOOLS),
@@ -70,6 +112,8 @@ def main():
         "--specpath", str(TOOLS / "build"),
     ])
     print(f"built {TOOLS / 'dist' / NAME}")
+    if os.name == "nt":
+        add_start_menu_shortcut(TOOLS / "dist" / NAME / f"{NAME}.exe")
 
 if __name__ == "__main__":
     main()
