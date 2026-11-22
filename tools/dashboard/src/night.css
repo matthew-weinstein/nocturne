@@ -2,7 +2,8 @@
   display: grid;
   grid-template-columns: minmax(190px, 1fr) minmax(0, 800px) minmax(240px, 1fr);
   gap: 32px;
-  height: clamp(560px, calc(100vh - 116px), 784px);
+  flex: 1;
+  min-height: 560px;
   align-items: center;
 }
 .night .dial-col {
