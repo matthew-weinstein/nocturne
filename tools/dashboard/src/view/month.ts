@@ -1,57 +1,79 @@
 import type { Month, MonthNight } from "../api.ts";
-import { clockOfMinute, durationParts, durationText, nightDateText, type Part } from "./format.ts";
+import { clockOfMinute, durationParts, nightDateText, type Part } from "./format.ts";
 import type { Insight } from "./night.ts";
 
 export const MONTH_DAYS = 30;
 export const STEP_DAYS = 7;
-export const PROFILE_STEP_MIN = 1;
 export const SUNRISE_JUMP_MIN = 20;
 
+export const CHART_W = 800;
+export const CHART_H = 720;
+const PL = 91;
+const PR = 709;
+const PT = 108;
+const PITCH = 16;
 const NOON_MIN = 720;
-const AXIS_PAD_MIN = 30;
-const TICK_MIN = 120;
-const EDGE_MIN = 8;
+const AXIS_PAD_MIN = 20;
+const AWAKE_HALF = 0.75;
+const TAPER_MIN = 4;
 
 export interface BarView {
   sessionId: string;
+  awake: string;
+  asleep: string;
   bedX: number;
   upX: number;
-  onsetX: number | null;
-  wakeX: number | null;
   sunriseX: number | null;
-  profile: number[];
   bed: string;
   up: string;
   sunrise: string | null;
-  sleep: string;
   sleepParts: Part[];
+  sleepText: string;
   bedtime: string;
 }
 
 export interface MonthDay {
   nightOf: string;
-  dateText: string;
-  dayText: string;
+  longText: string;
+  shortText: string;
   free: boolean;
+  y: number;
   night: BarView | null;
 }
 
-export interface Tick {
+export interface AxisLine {
+  path: string;
+  major: boolean;
+}
+
+export interface Label {
   x: number;
-  label: string;
+  y: number;
+  text: string;
+}
+
+export interface Shade {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  radius: number;
 }
 
 export interface MonthView {
   rangeText: string;
-  last: string;
   previousLast: string | null;
   nextLast: string | null;
-  startX: number;
-  endX: number;
-  ticks: Tick[];
   days: MonthDay[];
-  sunrise: { day: number; x: number }[][];
+  grid: AxisLine[];
+  hours: Label[];
+  shades: Shade[];
+  glow: string;
+  sunline: string;
+  labelY: number;
   insights: Insight[];
+  count: number;
+  summary: string;
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -82,116 +104,82 @@ export function clockFromNoon(clockMin: number): string {
   return clockOfMinute(clockMin + NOON_MIN);
 }
 
+function hourFromNoon(clockMin: number): string {
+  return clockFromNoon(clockMin).replace(":00", "");
+}
+
 function percentile(sorted: number[], fraction: number): number {
   const index = Math.min(sorted.length - 1, Math.floor(sorted.length * fraction));
   return sorted[index];
 }
 
-function smoothstep(edge: number): number {
-  const t = Math.max(0, Math.min(1, edge));
-  return t * t * (3 - 2 * t);
-}
-
-/**
- * The night's swell every PROFILE_STEP_MIN from bed to up, 0 to 1: louder bins swell more,
- * relative to the night's own floor and peaks, and only while asleep.
- */
-export function barProfile(
-  peaks: (number | null)[],
-  binS: number,
-  spanMin: number,
-  onsetMin: number | null,
-  wakeMin: number | null,
-): number[] {
+/** Each level bin from 0 (the night's floor) to 1 (its loud peaks). */
+export function levelsOf(peaks: (number | null)[]): number[] {
   const known: number[] = [];
   for (const peak of peaks) {
     if (peak !== null) {
       known.push(peak);
     }
   }
-  const steps = Math.max(1, Math.round(spanMin / PROFILE_STEP_MIN));
-  const profile: number[] = [];
-  if (known.length === 0 || onsetMin === null || wakeMin === null) {
-    for (let step = 0; step <= steps; step++) {
-      profile.push(0);
+  const levels: number[] = [];
+  if (known.length === 0) {
+    for (let index = 0; index < peaks.length; index++) {
+      levels.push(0);
     }
-    return profile;
+    return levels;
   }
-
   known.sort((a, b) => a - b);
   const floor = percentile(known, 0.1);
-  const top = percentile(known, 0.98);
-  const range = Math.max(6, top - floor);
-  const raw: number[] = [];
+  const range = Math.max(6, percentile(known, 0.98) - floor);
   for (const peak of peaks) {
     if (peak === null) {
-      raw.push(0);
+      levels.push(0);
     } else {
-      raw.push(Math.max(0, Math.min(1, (peak - floor) / range)));
+      levels.push(Math.max(0, Math.min(1, (peak - floor) / range)));
     }
   }
-
-  const binMin = binS / 60;
-  for (let step = 0; step <= steps; step++) {
-    const minute = Math.min(spanMin, step * PROFILE_STEP_MIN);
-    const centre = minute / binMin;
-    let sum = 0;
-    let weights = 0;
-    for (let offset = -4; offset <= 4; offset++) {
-      const index = Math.floor(centre) + offset;
-      if (index < 0 || index >= raw.length) {
-        continue;
-      }
-      const weight = Math.exp(-0.5 * ((index + 0.5 - centre) / 1.6) ** 2);
-      sum += raw[index] * weight;
-      weights += weight;
-    }
-    let level = 0;
-    if (weights > 0) {
-      level = sum / weights;
-    }
-    const asleep = Math.min(
-      smoothstep((minute - onsetMin) / EDGE_MIN),
-      smoothstep((wakeMin - minute) / EDGE_MIN),
-    );
-    profile.push(asleep * (0.35 + 0.65 * Math.pow(level, 0.7)));
-  }
-  return profile;
+  return levels;
 }
 
-function barOf(night: MonthNight): BarView {
-  const spanMin = (night.up_unix - night.bedtime_unix) / 60;
-  let onsetMin: number | null = null;
-  if (night.onset_clock_min !== null) {
-    onsetMin = night.onset_clock_min - night.bedtime_clock_min;
+function levelAt(levels: number[], binMin: number, minute: number): number {
+  if (levels.length === 0) {
+    return 0;
   }
-  let wakeMin: number | null = null;
-  if (night.wake_clock_min !== null) {
-    wakeMin = night.wake_clock_min - night.bedtime_clock_min;
+  if (levels.length === 1) {
+    return levels[0];
   }
-  let sunrise: string | null = null;
-  if (night.sunrise_clock_min !== null) {
-    sunrise = clockFromNoon(night.sunrise_clock_min);
+  const x = minute / binMin;
+  const index = Math.min(levels.length - 2, Math.max(0, Math.floor(x)));
+  const fraction = Math.min(1, Math.max(0, x - index));
+  return levels[index] + (levels[index + 1] - levels[index]) * fraction;
+}
+
+function fixed(value: number): string {
+  return value.toFixed(1);
+}
+
+/** A closed band along y from one minute to another, its half-width given per minute. */
+export function band(
+  y: number,
+  toX: (minute: number) => number,
+  from: number,
+  to: number,
+  halfWidth: (minute: number) => number,
+): string {
+  if (to - from < 0.5) {
+    return "";
   }
-  let sleepParts: Part[] = [{ n: "—", u: "" }];
-  if (night.sleep_min !== null) {
-    sleepParts = durationParts(night.sleep_min);
+  const top: string[] = [];
+  const bottom: string[] = [];
+  for (let minute = from; minute <= to + 0.001; minute += 1) {
+    const at = Math.min(minute, to);
+    const x = fixed(toX(at));
+    const half = halfWidth(at);
+    top.push(`${x} ${fixed(y - half)}`);
+    bottom.push(`${x} ${fixed(y + half)}`);
   }
-  return {
-    sessionId: night.session_id,
-    bedX: night.bedtime_clock_min,
-    upX: night.up_clock_min,
-    onsetX: night.onset_clock_min,
-    wakeX: night.wake_clock_min,
-    sunriseX: night.sunrise_clock_min,
-    profile: barProfile(night.levels.peak_db, night.levels.bin_s, spanMin, onsetMin, wakeMin),
-    bed: clockFromNoon(night.bedtime_clock_min),
-    up: clockFromNoon(night.up_clock_min),
-    sunrise,
-    sleep: durationText(night.sleep_min),
-    sleepParts,
-    bedtime: clockFromNoon(night.bedtime_clock_min),
-  };
+  bottom.reverse();
+  return `M${top.concat(bottom).join("L")}Z`;
 }
 
 function mean(values: number[]): number | null {
@@ -217,39 +205,35 @@ function standardDeviation(values: number[]): number | null {
   return Math.sqrt(sum / (values.length - 1));
 }
 
-function durationInsight(minutes: number | null, label: string): Insight {
-  if (minutes === null) {
-    return { parts: [{ n: "—", u: "" }], label };
-  }
-  return { parts: durationParts(minutes), label };
+const NONE: Part[] = [{ n: "—", u: "" }];
+
+function signedParts(minutes: number, sign: string): Part[] {
+  const parts = durationParts(Math.abs(minutes));
+  parts[0] = { n: `${sign}${parts[0].n}`, u: parts[0].u };
+  return parts;
 }
 
-function signedInsight(minutes: number | null, label: string): Insight {
-  if (minutes === null) {
-    return { parts: [{ n: "—", u: "" }], label };
+export function sleepInsight(month: Month): Insight {
+  const sleep: number[] = [];
+  for (const night of month.nights) {
+    if (night.sleep_min !== null) {
+      sleep.push(night.sleep_min);
+    }
   }
-  const parts = durationParts(Math.abs(minutes));
-  let sign = "";
-  if (Math.round(minutes) > 0) {
-    sign = "+";
-  } else if (Math.round(minutes) < 0) {
-    sign = "−";
+  const average = mean(sleep);
+  if (average === null) {
+    return { parts: NONE, label: "avg. sleep time" };
   }
-  parts[0] = { n: `${sign}${parts[0].n}`, u: parts[0].u };
-  return { parts, label };
+  return { parts: durationParts(average), label: "avg. sleep time" };
 }
 
 export function monthInsights(month: Month): Insight[] {
-  const sleep: number[] = [];
   const latency: number[] = [];
   const efficiency: number[] = [];
   const bedtimes: number[] = [];
   const freeMidpoints: number[] = [];
   const workMidpoints: number[] = [];
   for (const night of month.nights) {
-    if (night.sleep_min !== null) {
-      sleep.push(night.sleep_min);
-    }
     if (night.onset_latency_min !== null) {
       latency.push(night.onset_latency_min);
     }
@@ -266,74 +250,147 @@ export function monthInsights(month: Month): Insight[] {
     }
   }
 
-  let efficiencyInsight: Insight = { parts: [{ n: "—", u: "" }], label: "efficiency" };
-  const meanEfficiency = mean(efficiency);
-  if (meanEfficiency !== null) {
-    efficiencyInsight = { parts: [{ n: String(Math.round(meanEfficiency * 100)), u: "%" }], label: "efficiency" };
+  let latencyParts = NONE;
+  const meanLatency = mean(latency);
+  if (meanLatency !== null) {
+    latencyParts = [{ n: String(Math.round(meanLatency)), u: "m" }];
   }
 
-  let shift: number | null = null;
+  let efficiencyParts = NONE;
+  const meanEfficiency = mean(efficiency);
+  if (meanEfficiency !== null) {
+    efficiencyParts = [{ n: String(Math.round(meanEfficiency * 100)), u: "%" }];
+  }
+
+  let spreadParts = NONE;
+  const spread = standardDeviation(bedtimes);
+  if (spread !== null) {
+    spreadParts = signedParts(spread, "±");
+  }
+
+  let debtParts = NONE;
+  if (month.debt_14_min !== null) {
+    debtParts = durationParts(Math.max(0, month.debt_14_min));
+  }
+
+  let shiftParts = NONE;
   const free = mean(freeMidpoints);
   const work = mean(workMidpoints);
   if (free !== null && work !== null) {
-    shift = free - work;
-  }
-
-  let spread: Insight = { parts: [{ n: "—", u: "" }], label: "bedtime spread" };
-  const spreadMin = standardDeviation(bedtimes);
-  if (spreadMin !== null) {
-    const parts = durationParts(spreadMin);
-    parts[0] = { n: `±${parts[0].n}`, u: parts[0].u };
-    spread = { parts, label: "bedtime spread" };
-  }
-
-  let debt: number | null = null;
-  if (month.debt_14_min !== null) {
-    debt = Math.max(0, month.debt_14_min);
+    const shift = Math.round(free - work);
+    let sign = "+";
+    if (shift < 0) {
+      sign = "−";
+    } else if (shift === 0) {
+      sign = "";
+    }
+    shiftParts = signedParts(shift, sign);
   }
 
   return [
-    durationInsight(mean(sleep), "average sleep"),
-    durationInsight(mean(latency), "to fall asleep"),
-    efficiencyInsight,
-    spread,
-    durationInsight(debt, "sleep debt, 14 nights"),
-    signedInsight(shift, "weekend shift"),
+    sleepInsight(month),
+    { parts: latencyParts, label: "to fall asleep" },
+    { parts: efficiencyParts, label: "efficiency" },
+    { parts: spreadParts, label: "bedtime spread" },
+    { parts: debtParts, label: "sleep debt" },
+    { parts: shiftParts, label: "weekend shift" },
   ];
 }
 
-function roundDown(value: number, step: number): number {
-  return Math.floor(value / step) * step;
+/** The sunrise line through each night, broken at a missing night or a jump over SUNRISE_JUMP_MIN. */
+export function sunline(points: ({ x: number; y: number; clock: number } | null)[]): string {
+  let path = "";
+  let before: number | null = null;
+  for (const point of points) {
+    if (point === null) {
+      before = null;
+      continue;
+    }
+    let move = "L";
+    if (before === null || Math.abs(point.clock - before) > SUNRISE_JUMP_MIN) {
+      move = "M";
+    }
+    path += `${move}${fixed(point.x)} ${fixed(point.y)}`;
+    before = point.clock;
+  }
+  return path;
 }
 
-function roundUp(value: number, step: number): number {
-  return Math.ceil(value / step) * step;
+interface Axis {
+  start: number;
+  end: number;
 }
 
-/** Where each night's sunrise falls, broken at a missing night or a jump over SUNRISE_JUMP_MIN. */
-export function sunriseRuns(days: MonthDay[]): { day: number; x: number }[][] {
-  const runs: { day: number; x: number }[][] = [];
-  let run: { day: number; x: number }[] = [];
-  for (let day = 0; day < days.length; day++) {
-    const night = days[day].night;
-    let x: number | null = null;
-    if (night !== null) {
-      x = night.sunriseX;
-    }
-    const previous = run[run.length - 1];
-    const broken = x === null || (previous !== undefined && Math.abs(x - previous.x) > SUNRISE_JUMP_MIN);
-    if (broken && run.length > 0) {
-      runs.push(run);
-      run = [];
-    }
-    if (x !== null) {
-      run.push({ day, x });
+function axisOf(nights: MonthNight[]): Axis {
+  let earliest = Infinity;
+  let latest = -Infinity;
+  for (const night of nights) {
+    earliest = Math.min(earliest, night.bedtime_clock_min);
+    latest = Math.max(latest, night.up_clock_min);
+    if (night.sunrise_clock_min !== null) {
+      latest = Math.max(latest, night.sunrise_clock_min);
     }
   }
-  if (run.length > 0) {
-    runs.push(run);
+  if (earliest === Infinity) {
+    return { start: 600, end: 1200 };
   }
-  return runs;
+  return {
+    start: Math.floor((earliest - AXIS_PAD_MIN) / 60) * 60,
+    end: Math.ceil((latest + AXIS_PAD_MIN) / 60) * 60,
+  };
+}
+
+function barOf(night: MonthNight, y: number, toX: (clockMin: number) => number): BarView {
+  const bed = night.bedtime_clock_min;
+  const spanMin = Math.max(0, night.up_clock_min - bed);
+  const atMinute = (minute: number): number => toX(bed + minute);
+  const awakeHalf = (): number => AWAKE_HALF;
+
+  let awake = "";
+  let asleep = "";
+  if (night.onset_clock_min === null || night.wake_clock_min === null) {
+    awake = band(y, atMinute, 0, spanMin, awakeHalf);
+  } else {
+    const onset = Math.max(0, night.onset_clock_min - bed);
+    const wake = Math.min(spanMin, night.wake_clock_min - bed);
+    const levels = levelsOf(night.levels.peak_db);
+    const binMin = night.levels.bin_s / 60;
+    const halfWidth = (minute: number): number => {
+      const taper = Math.max(0.35, Math.min(1, (minute - onset) / TAPER_MIN, (wake - minute) / TAPER_MIN));
+      return (1.2 + 3.4 * Math.pow(levelAt(levels, binMin, minute), 0.7)) * taper;
+    };
+    awake = band(y, atMinute, 0, onset, awakeHalf) + band(y, atMinute, wake, spanMin, awakeHalf);
+    asleep = band(y, atMinute, onset, wake, halfWidth);
+  }
+
+  let sunrise: string | null = null;
+  if (night.sunrise_clock_min !== null) {
+    sunrise = clockFromNoon(night.sunrise_clock_min);
+  }
+  let sleepParts = NONE;
+  let sleepText = "—";
+  if (night.sleep_min !== null) {
+    const total = Math.round(night.sleep_min);
+    sleepParts = [
+      { n: String(Math.floor(total / 60)), u: "h" },
+      { n: String(total % 60), u: "m" },
+    ];
+    sleepText = `${Math.floor(total / 60)}h ${total % 60}m`;
+  }
+  return {
+    sessionId: night.session_id,
+    awake,
+    asleep,
+    bedX: toX(bed),
+    upX: toX(night.up_clock_min),
+    sunriseX: night.sunrise_clock_min === null ? null : toX(night.sunrise_clock_min),
+    bed: clockFromNoon(bed),
+    up: clockFromNoon(night.up_clock_min),
+    sunrise,
+    sleepParts,
+    sleepText,
+    bedtime: clockFromNoon(bed),
+  };
 }
 
 export function monthView(month: Month): MonthView {
@@ -341,42 +398,59 @@ export function monthView(month: Month): MonthView {
   for (const night of month.nights) {
     byDate.set(night.night_of, night);
   }
+  const axis = axisOf(month.nights);
+  const toX = (clockMin: number): number => PL + ((clockMin - axis.start) / (axis.end - axis.start)) * (PR - PL);
+  const bottom = PT + MONTH_DAYS * PITCH;
 
   const days: MonthDay[] = [];
-  let earliestX = Infinity;
-  let latestX = -Infinity;
-  for (let back = 0; back < MONTH_DAYS; back++) {
-    const nightOf = addDays(month.last, -back);
+  const shades: Shade[] = [];
+  const sunPoints: ({ x: number; y: number; clock: number } | null)[] = [];
+  let glow = "";
+  let count = 0;
+  for (let index = 0; index < MONTH_DAYS; index++) {
+    const nightOf = addDays(month.last, index - (MONTH_DAYS - 1));
     const date = utcDate(nightOf);
+    const weekday = date.getUTCDay();
+    const y = PT + (MONTH_DAYS - 1 - index) * PITCH + PITCH / 2;
+    const free = weekday === 5 || weekday === 6;
+    if (free) {
+      shades.push({ x: PL - 8, y: y - PITCH / 2 + 1, width: PR - PL + 16, height: PITCH - 2, radius: (PITCH - 2) / 2 });
+    }
     const night = byDate.get(nightOf);
     let bar: BarView | null = null;
-    if (night !== undefined) {
-      bar = barOf(night);
-      earliestX = Math.min(earliestX, bar.bedX);
-      latestX = Math.max(latestX, bar.upX);
-      if (bar.sunriseX !== null) {
-        latestX = Math.max(latestX, bar.sunriseX);
+    if (night === undefined) {
+      sunPoints.push(null);
+    } else {
+      count += 1;
+      bar = barOf(night, y, toX);
+      glow += bar.asleep;
+      if (night.sunrise_clock_min === null) {
+        sunPoints.push(null);
+      } else {
+        sunPoints.push({ x: toX(night.sunrise_clock_min), y, clock: night.sunrise_clock_min });
       }
     }
-    const weekday = date.getUTCDay();
     days.push({
       nightOf,
-      dateText: nightDateText(nightOf),
-      dayText: `${WEEKDAYS[weekday]} ${date.getUTCDate()}`,
-      free: weekday === 5 || weekday === 6,
+      longText: nightDateText(nightOf),
+      shortText: `${WEEKDAYS[weekday]} ${date.getUTCDate()}`,
+      free,
+      y,
       night: bar,
     });
   }
-  if (earliestX === Infinity) {
-    earliestX = 660;
-    latestX = 1140;
-  }
 
-  const startX = roundDown(earliestX - AXIS_PAD_MIN, 60);
-  const endX = roundUp(latestX + AXIS_PAD_MIN, 60);
-  const ticks: Tick[] = [];
-  for (let x = roundUp(startX, TICK_MIN); x <= endX; x += TICK_MIN) {
-    ticks.push({ x, label: clockFromNoon(x).replace(":00", "") });
+  const grid: AxisLine[] = [];
+  const hours: Label[] = [];
+  for (let minute = axis.start; minute <= axis.end; minute += 60) {
+    const major = (minute + NOON_MIN) % 180 === 0;
+    const x = fixed(toX(minute));
+    let reach = 3;
+    if (major) {
+      reach = 7;
+      hours.push({ x: toX(minute), y: bottom + 14, text: hourFromNoon(minute) });
+    }
+    grid.push({ path: `M${x} ${PT}V${bottom + reach}`, major });
   }
 
   let previousLast: string | null = null;
@@ -391,16 +465,32 @@ export function monthView(month: Month): MonthView {
     }
   }
 
+  const range = rangeText(month.first, month.last);
   return {
-    rangeText: rangeText(month.first, month.last),
-    last: month.last,
+    rangeText: range,
     previousLast,
     nextLast,
-    startX,
-    endX,
-    ticks,
     days,
-    sunrise: sunriseRuns(days),
+    grid,
+    hours,
+    shades,
+    glow,
+    sunline: sunline(sunPoints),
+    labelY: PT - 12,
     insights: monthInsights(month),
+    count,
+    summary:
+      `One bar per night from ${range}, the latest at the top, from ${hourFromNoon(axis.start)} ` +
+      `to ${hourFromNoon(axis.end)}. Each bar runs from bed to up, thick while asleep. ` +
+      `Weekend nights are shaded and a line marks sunrise.`,
   };
+}
+
+/** The row under a point in chart units, or null outside the rows. */
+export function dayAt(y: number): number | null {
+  const row = Math.floor((y - PT) / PITCH);
+  if (row < 0 || row >= MONTH_DAYS) {
+    return null;
+  }
+  return MONTH_DAYS - 1 - row;
 }

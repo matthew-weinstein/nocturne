@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Month, MonthNight } from "../src/api.ts";
-import { addDays, barProfile, clockFromNoon, monthView, rangeText, sunriseRuns, type MonthDay } from "../src/view/month.ts";
+import { addDays, band, clockFromNoon, dayAt, levelsOf, monthView, rangeText, sunline } from "../src/view/month.ts";
 
 function night(nightOf: string, bed: number, sleep: number | null, sunrise: number | null, free = false): MonthNight {
   return {
@@ -45,23 +45,40 @@ test("dates step and print in the night's own calendar", () => {
   assert.equal(clockFromNoon(1140), "7:00 AM");
 });
 
-test("thirty days run newest first, a missing night left empty", () => {
+test("thirty days run oldest first, the latest drawn at the top", () => {
   const view = monthView(month([night("2026-11-20", 690, 420, 1150), night("2026-11-18", 700, 400, 1148)]));
 
   assert.equal(view.days.length, 30);
-  assert.equal(view.days[0].nightOf, "2026-11-20");
-  assert.equal(view.days[1].night, null);
-  assert.equal(view.days[2].night?.bedtime, "11:40 PM");
-  assert.equal(view.days[29].nightOf, "2026-10-22");
+  assert.equal(view.days[29].nightOf, "2026-11-20");
+  assert.equal(view.days[28].night, null);
+  assert.equal(view.days[27].night?.bedtime, "11:40 PM");
+  assert.equal(view.days[0].nightOf, "2026-10-22");
+  assert.ok(view.days[29].y < view.days[0].y);
+  assert.equal(view.days[29].longText, "Fri 20 Nov");
+  assert.equal(view.days[29].shortText, "Fri 20");
+  assert.equal(view.count, 2);
   assert.equal(view.rangeText, "22 Oct – 20 Nov");
+});
+
+test("a point picks the row under it, the top row the latest night", () => {
+  assert.equal(dayAt(110), 29);
+  assert.equal(dayAt(108 + 29 * 16 + 1), 0);
+  assert.equal(dayAt(100), null);
+  assert.equal(dayAt(108 + 30 * 16), null);
 });
 
 test("the clock spans every bed, up and sunrise, padded to the hour", () => {
   const view = monthView(month([night("2026-11-20", 690, 420, 1150)]));
 
-  assert.equal(view.startX, 660);
-  assert.equal(view.endX, 1200);
-  assert.equal(view.ticks[0].label, "12 AM");
+  assert.equal(view.grid.length, 10);
+  assert.ok(view.grid[0].path.startsWith("M91.0 108V"));
+  assert.ok(view.grid[9].path.startsWith("M709.0 108V"));
+  assert.deepEqual(view.hours.map((hour) => hour.text), ["12 AM", "3 AM", "6 AM"]);
+});
+
+test("free nights are shaded", () => {
+  const view = monthView(month([]));
+  assert.equal(view.shades.length, 9);
 });
 
 test("the date control steps a week while older nights remain", () => {
@@ -77,34 +94,37 @@ test("the date control steps a week while older nights remain", () => {
 });
 
 test("sunrise breaks at a missing night and at a clock change", () => {
-  const bar = (sunriseX: number | null) => ({ sunriseX }) as NonNullable<MonthDay["night"]>;
-  const days = [
-    { night: bar(1150) },
-    { night: bar(1151) },
-    { night: null },
-    { night: bar(1152) },
-    { night: bar(1090) },
-  ] as MonthDay[];
+  const path = sunline([
+    { x: 1, y: 10, clock: 1150 },
+    { x: 2, y: 20, clock: 1151 },
+    null,
+    { x: 3, y: 30, clock: 1152 },
+    { x: 4, y: 40, clock: 1090 },
+  ]);
 
-  const runs = sunriseRuns(days);
-
-  assert.deepEqual(runs.map((run) => run.map((point) => point.day)), [[0, 1], [3], [4]]);
+  assert.equal(path, "M1.0 10.0L2.0 20.0M3.0 30.0M4.0 40.0");
 });
 
-test("a bar is thin outside sleep and swells where the room was loud", () => {
-  const peaks: number[] = [];
-  for (let index = 0; index < 60; index++) {
+test("levels run from the night's floor to its loud peaks", () => {
+  const peaks: (number | null)[] = [];
+  for (let index = 0; index < 50; index++) {
     peaks.push(40);
   }
-  peaks[30] = 60;
+  peaks.push(70, null);
 
-  const profile = barProfile(peaks, 60, 60, 10, 50);
+  const levels = levelsOf(peaks);
 
-  assert.equal(profile.length, 61);
-  assert.equal(profile[0], 0);
-  assert.equal(profile[60], 0);
-  assert.ok(profile[30] > profile[22] + 0.2);
-  assert.deepEqual(barProfile([null], 60, 10, 1, 9), new Array(11).fill(0));
+  assert.equal(levels[0], 0);
+  assert.equal(levels[50], 1);
+  assert.equal(levels[51], 0);
+  assert.deepEqual(levelsOf([null, null]), [0, 0]);
+});
+
+test("a band traces its top edge, then its bottom edge back", () => {
+  const path = band(100, (minute) => minute * 10, 0, 2, () => 1);
+
+  assert.equal(path, "M0.0 99.0L10.0 99.0L20.0 99.0L20.0 101.0L10.0 101.0L0.0 101.0Z");
+  assert.equal(band(100, (minute) => minute, 3, 3.2, () => 1), "");
 });
 
 test("the summary averages the nights and shows the weekend shift", () => {
@@ -115,7 +135,10 @@ test("the summary averages the nights and shows the weekend shift", () => {
   const view = monthView(month(nights));
 
   assert.deepEqual(view.insights[0].parts, [{ n: "7", u: "h" }, { n: "30", u: "m" }]);
+  assert.equal(view.insights[0].label, "avg. sleep time");
+  assert.deepEqual(view.insights[1].parts, [{ n: "15", u: "m" }]);
   assert.equal(view.insights[2].parts[0].n, "90");
+  assert.deepEqual(view.insights[3].parts, [{ n: "±1", u: "h" }, { n: "4", u: "m" }]);
   assert.deepEqual(view.insights[4].parts, [{ n: "1", u: "h" }, { n: "35", u: "m" }]);
   assert.deepEqual(view.insights[5].parts, [{ n: "+1", u: "h" }, { n: "0", u: "m" }]);
 });

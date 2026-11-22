@@ -3,18 +3,22 @@ import { test } from "node:test";
 import type { TrendNight, Trends } from "../src/api.ts";
 import { addDays } from "../src/view/month.ts";
 import {
+  CHART_H,
+  CHART_W,
   METRICS,
-  centredMean,
-  changeText,
   eta,
   factorsFor,
-  linearFit,
+  hoverAt,
+  hoverView,
   metricOf,
-  rankedFactors,
+  niceAxis,
+  pearson,
+  seriesOf,
+  signedParts,
   strengthWord,
   tickText,
   trendsView,
-  withNightBefore,
+  valueParts,
 } from "../src/view/trends.ts";
 
 function nightOn(nightOf: string, values: Record<string, number | null>, free = false): TrendNight {
@@ -38,54 +42,61 @@ function data(list: TrendNight[]): Trends {
   return { sleep_target_min: 480, earliest: list[0].night_of, latest: list[list.length - 1].night_of, nights: list };
 }
 
-test("a least-squares fit finds the slope and r", () => {
-  const fit = linearFit([{ x: 0, y: 1 }, { x: 1, y: 3 }, { x: 2, y: 5 }]);
+test("pearson finds the slope, intercept and r", () => {
+  const fit = pearson([0, 1, 2], [1, 3, 5]);
 
-  assert.ok(fit !== null);
   assert.equal(fit.slope, 2);
   assert.equal(fit.intercept, 1);
   assert.equal(fit.r, 1);
-  assert.equal(linearFit([{ x: 1, y: 1 }, { x: 1, y: 2 }]), null);
+  assert.equal(pearson([1, 1], [1, 2]).r, 0);
 });
 
 test("eta is how much the groups explain", () => {
-  assert.equal(eta([{ x: 0, y: 1 }, { x: 0, y: 1 }, { x: 1, y: 5 }, { x: 1, y: 5 }]), 1);
-  assert.equal(eta([{ x: 0, y: 1 }, { x: 1, y: 2 }, { x: 0, y: 2 }, { x: 1, y: 1 }]), 0);
-  assert.equal(eta([{ x: 0, y: 1 }, { x: 0, y: 2 }]), null);
+  const pair = (x: number, y: number) => ({ day: 0, x, y });
+  assert.equal(eta([pair(0, 1), pair(0, 1), pair(1, 5), pair(1, 5)], 2), 1);
+  assert.equal(eta([pair(0, 1), pair(1, 2), pair(0, 2), pair(1, 1)], 2), 0);
 });
 
-test("strength has words and needs fourteen nights", () => {
-  assert.equal(strengthWord(0.62, 30), "Strong");
-  assert.equal(strengthWord(-0.31, 30), "Moderate");
-  assert.equal(strengthWord(0.12, 30), "Weak");
-  assert.equal(strengthWord(0.05, 30), "None");
-  assert.equal(strengthWord(0.9, 13), "Too few nights");
+test("strength has words, and none under fourteen nights", () => {
+  assert.equal(strengthWord(0.62), "Strong");
+  assert.equal(strengthWord(0.31), "Moderate");
+  assert.equal(strengthWord(0.12), "Weak");
+  assert.equal(strengthWord(0.05), "None");
+  assert.equal(strengthWord(null), "Too few nights");
 });
 
-test("changes print signed in the metric's units", () => {
-  assert.equal(changeText("duration", -10.4), "−10m");
-  assert.equal(changeText("duration", 75), "+1h 15m");
-  assert.equal(changeText("percent", 0.031), "+3%");
-  assert.equal(changeText("minutes", 0.2), "0m");
+test("values and changes print in the metric's units", () => {
+  assert.deepEqual(valueParts("dur", 430), [{ n: "7", u: "h" }, { n: "10", u: "m" }]);
+  assert.deepEqual(valueParts("dur", 45), [{ n: "45", u: "m" }]);
+  assert.deepEqual(valueParts("clock", 690), [{ n: "11:30", u: "PM" }]);
+  assert.deepEqual(valueParts("pct", 91.6), [{ n: "92", u: "%" }]);
+  assert.deepEqual(signedParts("dur", -10.4), [{ n: "−10", u: "m" }]);
+  assert.deepEqual(signedParts("pct", 3.14), [{ n: "+3.1", u: "%" }]);
 });
 
-test("ticks drop zero minutes", () => {
-  assert.equal(tickText("10h 0m"), "10h");
-  assert.equal(tickText("7h 30m"), "7h 30m");
-  assert.equal(tickText("11:00 PM"), "11 PM");
-  assert.equal(tickText("11:30 PM"), "11:30 PM");
+test("axes take a nice step of at most four and ticks drop zero minutes", () => {
+  assert.deepEqual(niceAxis(400, 500, "dur"), { min: 390, max: 510, ticks: [390, 420, 450, 480, 510] });
+  assert.deepEqual(niceAxis(5, 5, "min").ticks, [5, 5.5]);
+  assert.equal(tickText("dur", 600), "10h");
+  assert.equal(tickText("dur", 450), "7h 30m");
+  assert.equal(tickText("clock", 660), "11 PM");
+  assert.equal(tickText("clock", 690), "11:30 PM");
+  assert.equal(tickText("num", 5, "°C"), "5°C");
 });
 
-test("the night before is the previous calendar night, if recorded", () => {
-  const list = withNightBefore([
-    nightOn("2026-11-01", { sleep_min: 400 }),
-    nightOn("2026-11-02", { sleep_min: 420 }),
-    nightOn("2026-11-04", { sleep_min: 440 }),
-  ]);
+test("the series has a slot per calendar day and the night before's sleep", () => {
+  const series = seriesOf(
+    data([
+      nightOn("2026-11-01", { sleep_min: 400, efficiency: 0.9 }),
+      nightOn("2026-11-02", { sleep_min: 420 }),
+      nightOn("2026-11-04", { sleep_min: 440 }),
+    ]),
+  );
 
-  assert.equal(list[0].before_sleep_min, null);
-  assert.equal(list[1].before_sleep_min, 400);
-  assert.equal(list[2].before_sleep_min, null);
+  assert.equal(series.count, 4);
+  assert.deepEqual(series.values.get("before_sleep_min"), [null, 400, 420, null]);
+  assert.equal(series.values.get("efficiency")?.[0], 90);
+  assert.equal(series.values.get("weekday")?.[0], 6);
 });
 
 test("a metric never stands against itself, nor the midpoint against its ends", () => {
@@ -104,31 +115,22 @@ test("a metric never stands against itself, nor the midpoint against its ends", 
   assert.ok(!names("snoring").includes("snoring"));
 });
 
-test("factors rank by strength", () => {
+test("factors rank by strength after over time", () => {
   const list = nights(30, "2026-11-20", (index) => ({
     sleep_min: 480 - index * 2,
     bedtime_clock_min: 660 + index * 2,
     temperature_c: (index * 7) % 5,
   }));
 
-  const ranked = rankedFactors(withNightBefore(list), metricOf("sleep"));
+  const view = trendsView(data(list), { range: "month", metric: "sleep", factor: "time" });
 
-  assert.equal(ranked[0].name, "bedtime");
-  assert.equal(ranked[0].strength.word, "Strong");
+  assert.equal(view.factorItems[0].label, "Over time");
+  assert.equal(view.factorItems[0].meter, false);
+  assert.equal(view.factorItems[1].name, "bedtime");
+  assert.equal(view.factorItems[1].word, "Strong");
 });
 
-test("the centred mean breaks at a missing night and is raw for a week", () => {
-  const points = [
-    { x: 1, y: 1, nightOf: "", free: false },
-    { x: 2, y: 3, nightOf: "", free: false },
-    { x: 4, y: 5, nightOf: "", free: false },
-  ];
-
-  assert.deepEqual(centredMean(points, true), [[{ x: 1, y: 1 }, { x: 2, y: 3 }], [{ x: 4, y: 5 }]]);
-  assert.equal(centredMean(points, false)[0][0].y, 3);
-});
-
-test("over time shows the average and the change on the previous period", () => {
+test("over time shows the average and the change on the period before", () => {
   const list = nights(60, "2026-11-20", (index) => {
     if (index < 30) {
       return { sleep_min: 400 };
@@ -138,12 +140,30 @@ test("over time shows the average and the change on the previous period", () => 
 
   const view = trendsView(data(list), { range: "month", metric: "sleep", factor: "time" });
 
-  assert.equal(view.figure, "7h 10m");
-  assert.equal(view.line, "+30m on the previous month");
-  assert.equal(view.chart.kind, "time");
-  assert.equal(view.chart.points.length, 30);
-  assert.equal(view.chart.target, 480);
-  assert.equal(view.connective, "over");
+  assert.deepEqual(view.figure, [{ n: "7", u: "h" }, { n: "10", u: "m" }]);
+  assert.equal(view.sub, "average of 30 nights · 30m more than the 30 before");
+  assert.equal(view.joiner, "over");
+  assert.equal(view.factorText, "time");
+  assert.equal(view.hits.length, 30);
+  assert.ok(view.target.startsWith("M64 "));
+  assert.equal(view.tags[0].text, "8h target");
+  assert.deepEqual(
+    view.xLabels.map((label) => label.text),
+    ["23 Oct", "30 Oct", "6 Nov", "13 Nov", "20 Nov"],
+  );
+});
+
+test("hovering a column picks its night and shows it", () => {
+  const trends = data(nights(30, "2026-11-20", () => ({ sleep_min: 420 })));
+  const view = trendsView(trends, { range: "month", metric: "sleep", factor: "time" });
+
+  assert.equal(hoverAt(view, CHART_W - 17, CHART_H / 2), 29);
+  assert.equal(hoverAt(view, 10, CHART_H / 2), null);
+
+  const hover = hoverView(view, trends, 29);
+  assert.equal(hover?.sub, "Fri 20 Nov");
+  assert.deepEqual(hover?.figure, [{ n: "7", u: "h" }, { n: "0", u: "m" }]);
+  assert.ok(hover?.hair.startsWith("M"));
 });
 
 test("against a number, the figure is the slope per readable step", () => {
@@ -151,10 +171,21 @@ test("against a number, the figure is the slope per readable step", () => {
 
   const view = trendsView(data(list), { range: "month", metric: "sleep", factor: "bedtime" });
 
-  assert.equal(view.figure, "−10m");
-  assert.equal(view.line, "with each hour later to bed · strong link, 30 nights");
-  assert.equal(view.connective, "against");
-  assert.ok(view.chart.fit !== null);
+  assert.deepEqual(view.figure, [{ n: "−10", u: "m" }]);
+  assert.equal(view.sub, "with each hour later to bed · strong link, 30 nights");
+  assert.equal(view.joiner, "against");
+  assert.equal(view.factorText, "bedtime");
+  assert.ok(view.line.startsWith("M"));
+});
+
+test("against a number with too few nights, the figure counts them", () => {
+  const list = nights(5, "2026-11-20", (index) => ({ sleep_min: 480 - index, bedtime_clock_min: 660 + index }));
+
+  const view = trendsView(data(list), { range: "month", metric: "sleep", factor: "bedtime" });
+
+  assert.deepEqual(view.figure, [{ n: "5", u: "" }]);
+  assert.equal(view.sub, "nights so far; a link needs 14");
+  assert.equal(view.line, "");
 });
 
 test("against free day, the figure is the difference before one", () => {
@@ -170,23 +201,26 @@ test("against free day, the figure is the difference before one", () => {
 
   const view = trendsView(data(list), { range: "month", metric: "sleep", factor: "free" });
 
-  assert.equal(view.figure, "+1h 0m");
-  assert.equal(view.line, "before a free day · strong link, 20 nights");
+  assert.deepEqual(view.figure, [{ n: "+1", u: "h" }, { n: "0", u: "m" }]);
+  assert.equal(view.sub, "more before a free day · 20 nights");
 });
 
-test("against day of week, the figure is the best day", () => {
+test("against day of week, the figure is the top day", () => {
   const list = nights(28, "2026-11-22", () => ({ onset_latency_min: 20 }));
   for (const night of list) {
     if (night.weekday === 3) {
-      night.onset_latency_min = 5;
+      night.onset_latency_min = 50;
     }
   }
 
   const view = trendsView(data(list), { range: "month", metric: "latency", factor: "weekday" });
 
-  assert.equal(view.figure, "Wednesday");
-  assert.ok(view.line.startsWith("Most 20m on "));
-  assert.equal(view.chart.groups.length, 7);
+  assert.deepEqual(view.figure, [{ n: "Wednesday", u: "" }]);
+  assert.equal(view.sub, "longest to fall asleep, 50m · shortest Mon, 20m");
+  assert.deepEqual(
+    view.xLabels.map((label) => label.text),
+    ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+  );
 });
 
 test("an unknown metric or factor falls back to sleep over time", () => {
@@ -196,4 +230,6 @@ test("an unknown metric or factor falls back to sleep over time", () => {
 
   assert.equal(view.metric, METRICS[0]);
   assert.equal(view.factor, null);
+  assert.equal(view.radius, 4);
+  assert.equal(view.dotFill, "#97ABFF");
 });

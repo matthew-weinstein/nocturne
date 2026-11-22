@@ -115,3 +115,100 @@ export function choiceMenu(
   const anchor = h("div", { class: "menu-anchor" }, button, list);
   return anchor;
 }
+
+export interface PillOption {
+  value: string;
+  children: Node[];
+}
+
+/** The Trends sentence's word button and its listbox, centred under it. */
+export function pillMenu(
+  label: string,
+  name: string,
+  options: PillOption[],
+  selected: string,
+  onChoose: (value: string) => void,
+  heading: string | null = null,
+): HTMLElement {
+  const button = h(
+    "button",
+    { type: "button", class: "pill", "aria-haspopup": "listbox", "aria-expanded": "false" },
+    label,
+    svg(ICONS.chevron),
+  );
+  const list = h("div", { class: "menu pick", role: "listbox", "aria-label": name });
+  if (heading !== null) {
+    list.append(h("div", { class: "hd" }, heading));
+  }
+  const items: HTMLButtonElement[] = [];
+  for (const option of options) {
+    const item = h(
+      "button",
+      { type: "button", role: "option", "aria-selected": String(option.value === selected), tabindex: "-1" },
+      option.children,
+    );
+    item.addEventListener("click", () => {
+      close(true);
+      onChoose(option.value);
+    });
+    items.push(item);
+    list.append(item);
+  }
+  const anchor = h("span", { class: "slot" }, button, list);
+
+  const outside = (event: PointerEvent): void => {
+    if (!anchor.contains(event.target as Node)) {
+      close(false);
+    }
+  };
+
+  function open(): void {
+    list.classList.add("open");
+    button.setAttribute("aria-expanded", "true");
+    let current = items.findIndex((item) => item.getAttribute("aria-selected") === "true");
+    if (current < 0) {
+      current = 0;
+    }
+    items[current]?.focus();
+    document.addEventListener("pointerdown", outside);
+  }
+
+  function close(refocus: boolean): void {
+    list.classList.remove("open");
+    button.setAttribute("aria-expanded", "false");
+    document.removeEventListener("pointerdown", outside);
+    if (refocus) {
+      button.focus();
+    }
+  }
+
+  button.addEventListener("click", () => {
+    if (list.classList.contains("open")) {
+      close(false);
+    } else {
+      open();
+    }
+  });
+  list.addEventListener("keydown", (event) => {
+    const at = items.indexOf(document.activeElement as HTMLButtonElement);
+    let next = -1;
+    if (event.key === "ArrowDown") {
+      next = (at + 1) % items.length;
+    } else if (event.key === "ArrowUp") {
+      next = (at - 1 + items.length) % items.length;
+    } else if (event.key === "Home") {
+      next = 0;
+    } else if (event.key === "End") {
+      next = items.length - 1;
+    } else if (event.key === "Escape" || event.key === "Tab") {
+      event.preventDefault();
+      close(true);
+      return;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    items[next].focus();
+  });
+  return anchor;
+}

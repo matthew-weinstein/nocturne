@@ -1,40 +1,69 @@
 import type { Trends } from "../api.ts";
-import { TrendChart } from "../components/chart.ts";
-import { choiceMenu, type MenuChoice } from "../components/menu.ts";
+import { pillMenu, type PillOption } from "../components/menu.ts";
 import { h } from "../dom.ts";
+import type { Part } from "../view/format.ts";
 import {
+  CHART_H,
+  CHART_W,
   OVER_TIME,
   RANGES,
-  nightFigure,
+  hoverAt,
+  hoverView,
   trendsView,
-  type Point,
+  type Label,
   type TrendsChoice,
   type TrendsView,
 } from "../view/trends.ts";
 import { header, type Page } from "./shell.ts";
 
+const SVG_NS = "http://www.w3.org/2000/svg";
+
 export function trendsHash(choice: TrendsChoice): string {
   return `#/trends/${choice.range}/${choice.metric}/${choice.factor}`;
 }
 
-function rangeControl(choice: TrendsChoice, onChoose: (range: TrendsChoice["range"]) => void): HTMLElement {
-  let at = 0;
-  const buttons: HTMLElement[] = [];
-  RANGES.forEach((range, index) => {
-    if (range.name === choice.range) {
-      at = index;
+function node(tag: string, attributes: Record<string, string | number>): SVGElement {
+  const element = document.createElementNS(SVG_NS, tag);
+  for (const [name, value] of Object.entries(attributes)) {
+    element.setAttribute(name, String(value));
+  }
+  return element;
+}
+
+function at(x: number, y: number): string {
+  return `left:${((x / CHART_W) * 100).toFixed(2)}%;top:${((y / CHART_H) * 100).toFixed(2)}%`;
+}
+
+function labels(list: Label[], className: string): HTMLElement[] {
+  const nodes: HTMLElement[] = [];
+  for (const label of list) {
+    nodes.push(h("div", { class: className, style: at(label.x, label.y) }, label.text));
+  }
+  return nodes;
+}
+
+function figureNodes(parts: Part[]): HTMLElement[] {
+  const nodes: HTMLElement[] = [];
+  for (const part of parts) {
+    nodes.push(h("b", { class: "n" }, part.n));
+    if (part.u !== "") {
+      const clock = part.u === "AM" || part.u === "PM";
+      nodes.push(h("b", { class: clock ? "u ap" : "u" }, part.u));
     }
-    const button = h(
-      "button",
-      { type: "button", "aria-pressed": String(range.name === choice.range) },
-      range.label,
-    );
+  }
+  return nodes;
+}
+
+function rangeControl(index: number, onChoose: (range: TrendsChoice["range"]) => void): HTMLElement {
+  const buttons: HTMLElement[] = [];
+  RANGES.forEach((range, position) => {
+    const button = h("button", { type: "button", "aria-pressed": String(position === index) }, range.label);
     button.addEventListener("click", () => onChoose(range.name));
     buttons.push(button);
   });
   return h(
     "div",
-    { class: "well segmented range", role: "group", "aria-label": "Range", style: `--at:${at}` },
+    { class: "well segmented range", role: "group", "aria-label": "Range", style: `--at:${index}` },
     h("div", { class: "ind", "aria-hidden": "true" }),
     buttons,
   );
@@ -42,14 +71,28 @@ function rangeControl(choice: TrendsChoice, onChoose: (range: TrendsChoice["rang
 
 export function trendsPage(data: Trends, initial: TrendsChoice, synced: string | null): Page {
   const choice: TrendsChoice = { ...initial };
-  let chart: TrendChart | null = null;
+  let view: TrendsView = trendsView(data, choice);
 
-  const rangeSlot = h("div", {});
-  const sentence = h("h2", { class: "sentence" });
-  const figure = h("div", { class: "figure", "aria-live": "polite" });
-  const line = h("p", { class: "line" });
-  const chartBox = h("div", { class: "chart" });
-  const answer = h("div", { class: "answer" }, figure, line);
+  const control = rangeControl(view.rangeIndex, (range) => choose({ range }, "range"));
+  const ask = h("div", { class: "ask" });
+  const big = h("div", { class: "big" });
+  const sub = h("div", { class: "sub" });
+  const centre = h("div", { class: "ctr" }, ask, h("div", { "aria-live": "polite" }, big, sub));
+
+  const chartSvg = node("svg", { viewBox: `0 0 ${CHART_W} ${CHART_H}`, role: "img" });
+  const defs = node("defs", {});
+  const blur = node("filter", { id: "trend-blur", x: "-10%", y: "-30%", width: "120%", height: "160%" });
+  blur.append(node("feGaussianBlur", { stdDeviation: 5 }));
+  defs.append(blur);
+  const face = node("g", { class: "face" });
+  const plot = node("g", { class: "plot" });
+  const hair = node("path", { fill: "none", stroke: "rgba(255,255,255,.28)", "stroke-width": 1 });
+  const pick = node("path", { fill: "#F2F4FF" });
+  chartSvg.append(defs, face, plot);
+  const marks = h("div", { class: "marks" });
+  const chart = h("div", { class: "chart" }, centre, chartSvg, marks);
+
+  let hovered: number | null = null;
 
   function choose(change: Partial<TrendsChoice>, focus: string | null): void {
     Object.assign(choice, change);
@@ -57,66 +100,112 @@ export function trendsPage(data: Trends, initial: TrendsChoice, synced: string |
     render(focus);
   }
 
-  function showFigure(view: TrendsView, point: Point | null): void {
-    if (point === null) {
-      figure.textContent = view.figure;
-      line.textContent = view.line;
+  function showFigure(day: number | null): void {
+    hovered = day;
+    const hover = day === null ? null : hoverView(view, data, day);
+    if (hover === null) {
+      big.replaceChildren(...figureNodes(view.figure));
+      sub.textContent = view.sub;
+      hair.setAttribute("d", "");
+      pick.setAttribute("d", "");
       return;
     }
-    const shown = nightFigure(view, point);
-    figure.textContent = shown.figure;
-    line.textContent = shown.line;
+    big.replaceChildren(...figureNodes(hover.figure));
+    sub.textContent = hover.sub;
+    hair.setAttribute("d", hover.hair);
+    pick.setAttribute("d", hover.pick);
   }
 
   function render(focus: string | null): void {
-    const view = trendsView(data, choice);
+    view = trendsView(data, choice);
     if (view.factor === null) {
       choice.factor = OVER_TIME;
     }
 
-    const previousRange = rangeSlot.querySelector<HTMLElement>(".range");
-    const control = rangeControl(choice, (range) => choose({ range }, "range"));
-    if (previousRange !== null) {
-      const from = previousRange.style.getPropertyValue("--at");
-      const to = control.style.getPropertyValue("--at");
-      control.style.setProperty("--at", from);
-      requestAnimationFrame(() => control.style.setProperty("--at", to));
-    }
-    rangeSlot.replaceChildren(control);
+    control.style.setProperty("--at", String(view.rangeIndex));
+    control.querySelectorAll("button").forEach((button, index) => {
+      button.setAttribute("aria-pressed", String(index === view.rangeIndex));
+    });
 
-    const metricChoices: MenuChoice[] = [];
-    for (const item of view.metricChoices) {
-      metricChoices.push({ value: item.name, label: item.label, note: item.note });
-    }
-    const factorChoices: MenuChoice[] = [{ value: OVER_TIME, label: "Over time" }];
-    for (const item of view.factorChoices) {
-      factorChoices.push({
+    const metricOptions: PillOption[] = [];
+    for (const item of view.metricItems) {
+      metricOptions.push({
         value: item.name,
-        label: item.label,
-        note: item.strength.word,
-        meter: item.strength.word === "Too few nights" ? undefined : item.strength.value ?? 0,
+        children: [h("span", {}, item.title), h("span", { class: "av" }, item.average)],
       });
     }
-    let factorLabel = "time";
-    if (view.factor !== null) {
-      factorLabel = view.factor.label.toLowerCase();
+    const factorOptions: PillOption[] = [];
+    for (const item of view.factorItems) {
+      const children: Node[] = [h("span", {}, item.label)];
+      if (item.meter) {
+        children.push(
+          h(
+            "span",
+            { class: "meter" },
+            h("span", {}, item.word),
+            h("i", { "aria-hidden": "true" }, h("b", { style: `width:${Math.round((item.strength ?? 0) * 100)}%` })),
+          ),
+        );
+      }
+      factorOptions.push({ value: item.name, children });
     }
-    const metricMenu = choiceMenu(view.metric.label, metricChoices, view.metric.name, (metric) => {
+    const metricMenu = pillMenu(view.metric.title, "Show", metricOptions, view.metric.name, (metric) => {
       choose({ metric }, "metric");
     });
-    metricMenu.classList.add("metric-menu");
-    const factorMenu = choiceMenu(factorLabel, factorChoices, choice.factor, (factor) => {
-      choose({ factor }, "factor");
-    });
-    factorMenu.classList.add("factor-menu");
-    sentence.replaceChildren(metricMenu, h("span", { class: "word" }, view.connective), factorMenu);
+    const factorMenu = pillMenu(
+      view.factorText,
+      "Against",
+      factorOptions,
+      choice.factor,
+      (factor) => choose({ factor }, "factor"),
+      "Strongest link first",
+    );
+    ask.replaceChildren(metricMenu, h("span", {}, view.joiner), factorMenu);
 
-    showFigure(view, null);
+    chartSvg.setAttribute("aria-label", view.summary);
+    face.replaceChildren();
+    for (const band of view.bands) {
+      face.append(
+        node("rect", {
+          x: band.x.toFixed(1),
+          y: band.y,
+          width: band.width.toFixed(1),
+          height: band.height,
+          rx: band.radius.toFixed(1),
+          fill: "rgba(255,255,255,.028)",
+        }),
+      );
+    }
+    face.append(node("path", { d: view.grid, fill: "none", stroke: "rgba(232,235,244,.06)", "stroke-width": 1 }));
+    face.append(
+      node("path", {
+        d: view.target,
+        fill: "none",
+        stroke: "rgba(232,235,244,.32)",
+        "stroke-width": 1,
+        "stroke-dasharray": "3 5",
+      }),
+    );
 
-    chart?.destroy();
-    const canvas = h("canvas", { role: "img", "aria-label": view.summary });
-    chartBox.replaceChildren(canvas, h("p", { class: "sr" }, view.summary));
-    chart = new TrendChart(canvas, view.chart, (point) => showFigure(view, point));
+    const stroke = { fill: "none", "stroke-linecap": "round", "stroke-linejoin": "round" };
+    const fresh = node("g", { class: "plot" });
+    fresh.append(
+      node("path", { ...stroke, class: "bloom", d: view.line, stroke: "#5F7BF0", "stroke-width": 7, filter: "url(#trend-blur)" }),
+      node("path", { d: view.dots, fill: view.dotFill }),
+      node("path", { ...stroke, d: view.line, stroke: "#C4D0FF", "stroke-width": 1.8 }),
+      node("path", { ...stroke, d: view.means, stroke: "#F2F4FF", "stroke-width": 2 }),
+      hair,
+      pick,
+    );
+    chartSvg.querySelector(".plot")?.replaceWith(fresh);
+
+    marks.replaceChildren(
+      ...labels(view.yLabels, "ya"),
+      ...labels(view.xLabels, "xt"),
+      ...labels(view.tags, "tg"),
+    );
+
+    showFigure(null);
 
     if (focus === "metric") {
       metricMenu.querySelector("button")?.focus();
@@ -126,6 +215,20 @@ export function trendsPage(data: Trends, initial: TrendsChoice, synced: string |
       control.querySelector<HTMLElement>('[aria-pressed="true"]')?.focus();
     }
   }
+
+  chart.addEventListener("pointermove", (event) => {
+    if (ask.contains(event.target as Node)) {
+      return;
+    }
+    const box = chart.getBoundingClientRect();
+    const x = ((event.clientX - box.left) / box.width) * CHART_W;
+    const y = ((event.clientY - box.top) / box.height) * CHART_H;
+    const day = hoverAt(view, x, y);
+    if (day !== hovered) {
+      showFigure(day);
+    }
+  });
+  chart.addEventListener("pointerleave", () => showFigure(null));
 
   render(null);
 
@@ -138,15 +241,13 @@ export function trendsPage(data: Trends, initial: TrendsChoice, synced: string |
     "div",
     { class: "wrap" },
     h("h1", { class: "sr" }, "Trends"),
-    header("trends", synced, [rangeSlot]),
+    header("trends", synced, [control]),
     note,
-    h("div", { class: "trends" }, sentence, answer, chartBox),
+    h("div", { class: "trends" }, chart),
   );
 
   return {
     element,
-    leave() {
-      chart?.destroy();
-    },
+    leave() {},
   };
 }
